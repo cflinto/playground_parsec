@@ -1,0 +1,180 @@
+extern "C" %{
+
+/**
+ * This second example shows how to create a simple jdf that has only one single task.
+ *    JDF syntax
+ *    parsec_JDFNAME_New()
+ *    parsec_context_add_taskpool()
+ *    parsec_data_collection_init()
+ *
+ * Can play with the HelloWorld bounds to show embarissingly parallel algorithm.
+ *
+ * @version 3.0
+ * @email parsec-users@icl.utk.edu
+ *
+ */
+
+#include "parsec.h"
+
+%}
+
+mydata  [ type="parsec_data_collection_t*" ]
+rank   [ type="int" ]
+nodes   [ type="int" ]
+
+WriteA(k)
+
+k = 0 .. %{ return nodes-1; %}
+
+: mydata( k )
+
+RW A <- mydata( k )
+    -> A ReadA(k)
+
+
+BODY
+{
+    int *Aint = (int*)A;
+    *Aint = k*k;
+
+    printf("[%d] Wrote %d\n", rank, *Aint );
+}
+END
+
+ReadA(k)
+
+k = 0 .. %{ return nodes-1; %}
+
+: mydata( k )
+
+READ A <- A WriteA( k )
+
+
+BODY
+{
+    //printf("HelloWorld %d, %d\n", k, nodes);
+
+    int *Aint = (int*)A;
+
+    printf("[%d] Recv %d\n", rank, *Aint );
+}
+END
+
+extern "C" %{
+
+static uint32_t
+rank_of(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return 0;
+}
+
+static int32_t
+vpid_of(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return 0;
+}
+
+static parsec_data_t *ddata_mycounter = NULL;
+
+static parsec_data_t *
+data_of(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return ddata_mycounter;
+}
+
+static parsec_data_key_t
+data_key(parsec_data_collection_t *desc, ...)
+{
+    int k;
+    va_list ap;
+    (void)desc;
+    va_start(ap, desc);
+    k = va_arg(ap, int);
+    va_end(ap);
+    return (uint64_t)k;
+}
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    int rc;
+    int rank, world;
+    parsec_taskpool_t *tp;
+    parsec_arena_datatype_t adt;
+    parsec_data_collection_t mydata;
+    int mycounter;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+    world = 1;
+    rank = 0;
+#endif
+
+    parsec = parsec_init(-1, &argc, &argv);
+
+    /**
+     * See Ex03_ChainMPI.jdf for explanation
+     */
+    parsec_data_collection_init(&mydata, world, rank);
+    mydata.rank_of = rank_of;
+    mydata.vpid_of = vpid_of;
+    mydata.data_key = data_key;
+    mydata.data_of = data_of;
+
+    mycounter = 300 + rank;
+
+    parsec_arena_datatype_construct( &adt, sizeof(int), PARSEC_ARENA_ALIGNMENT_SSE, parsec_datatype_int_t );
+
+    ddata_mycounter = parsec_data_create(
+        &ddata_mycounter, &mydata, 0,
+        &mycounter, sizeof(int),
+        PARSEC_DATA_FLAG_PARSEC_MANAGED);
+
+    /**
+     * Let's create the taskpool that contains the description of the algorithm to
+     * run.
+     * The prototype of the parsec_test_new() is automatically
+     * generated and included in the generated .h file Ex01_HelloWorld.h
+     */
+    tp = (parsec_taskpool_t*)parsec_test_new(&mydata, rank, world);
+
+    /**
+     * Let's submit this taskpool to the runtime and wait for the completion
+     */
+    rc = parsec_context_add_taskpool( parsec, tp );
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    rc = parsec_context_wait(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+    /**
+     * We are done, time to cleanup the taskpool.
+     */
+    parsec_taskpool_free(tp);
+
+    parsec_data_destroy( ddata_mycounter );
+
+    /**
+     * See Ex03_ChainMPI.jdf for explanation
+     */
+    parsec_data_collection_destroy(&mydata);
+
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    return 0;
+}
+
+%}

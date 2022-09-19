@@ -1,0 +1,258 @@
+extern "C" %{
+
+/**
+ * This second example shows how to create a simple jdf that has only one single task.
+ *    JDF syntax
+ *    parsec_JDFNAME_New()
+ *    parsec_context_add_taskpool()
+ *    parsec_data_collection_init()
+ *
+ * Can play with the HelloWorld bounds to show embarissingly parallel algorithm.
+ *
+ * @version 3.0
+ * @email parsec-users@icl.utk.edu
+ *
+ */
+
+#include "parsec.h"
+
+%}
+
+data_A  [ type="parsec_data_collection_t*" ]
+data_B  [ type="parsec_data_collection_t*" ]
+data_C  [ type="parsec_data_collection_t*" ]
+rank   [ type="int" ]
+nodes   [ type="int" ]
+matrix_size_m   [ type="int" ] // row number
+matrix_size_n   [ type="int" ] // column number
+matrix_in_depth   [ type="int" ]
+
+WriteA(k)
+
+k = 0 .. %{ return matrix_size_m-1; %}
+
+: data_A( k )
+
+RW A <- data_A( k )
+    -> A GEMM(k)
+
+BODY
+{
+    int *Aint = (int*)A;
+    //int *Bint = (int*)B;
+    *Aint = k*k;
+
+    printf("[%d] Wrote %d\n", rank, *Aint );
+}
+END
+
+GEMM(k)
+
+k = 0 .. %{ return matrix_size_m-1; %}
+
+: data_C( k )
+
+READ A <- A WriteA( k )
+
+RW C <- data_C( k )
+    -> C Barrier(k)
+
+
+BODY
+{
+    //printf("HelloWorld %d, %d\n", k, nodes);
+
+    int *Aint = (int*)A;
+
+    printf("[%d] Recv %d\n", rank, *Aint );
+
+    int *Cint = (int*)C;
+    Cint[0] = 10;
+}
+END
+
+Barrier(k)
+
+k = 0 .. %{ return matrix_size_m-1; %}
+
+: data_C( k )
+
+READ C <- C GEMM(k)
+    <- (k > 0) ? C Barrier(k-1) : data_C(k)
+    -> (k < return matrix_size_m-1) ? Barrier(k+1)
+    -> (k == return matrix_size_m-1) ? C PrintC(0)
+
+BODY
+END
+
+PrintC(k)
+
+k = 0 .. %{ return matrix_size_m-1; %}
+
+: data_C( k )
+
+READ C <- (k >= 0) ? C GEMM(k) : data_C(k)
+
+
+BODY
+{
+    //printf("HelloWorld %d, %d\n", k, nodes);
+
+    int *Cint = (int*)C;
+
+    printf("[%d] final %d\n", rank, *Cint );
+    
+    /*for(int c=0;c<matrix_size_n;++c)
+    {
+        printf("%d ", Cint[c]);
+    }
+    printf("\n");*/
+}
+END
+
+extern "C" %{
+
+static uint32_t
+rank_of(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return 0;
+}
+
+static int32_t
+vpid_of(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return 0;
+}
+
+static parsec_data_t *ddata_A = NULL;
+
+static parsec_data_t *
+data_of_A(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return ddata_A;
+}
+
+static parsec_data_t *ddata_B = NULL;
+
+static parsec_data_t *
+data_of_B(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return ddata_B;
+}
+
+static parsec_data_t *ddata_C = NULL;
+
+static parsec_data_t *
+data_of_C(parsec_data_collection_t *desc, ...)
+{
+    (void)desc;
+    return ddata_C;
+}
+
+static parsec_data_key_t
+data_key(parsec_data_collection_t *desc, ...)
+{
+    int k;
+    va_list ap;
+    (void)desc;
+    va_start(ap, desc);
+    k = va_arg(ap, int);
+    va_end(ap);
+    return (uint64_t)k;
+}
+
+#define MATRIX_M 5
+#define MATRIX_N 6
+#define MATRIX_DEPTH 15
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    int rc;
+    int rank, world;
+    parsec_taskpool_t *tp;
+    parsec_data_collection_t data_A, data_B, data_C;
+    //int mycounter;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+    world = 1;
+    rank = 0;
+#endif
+
+    parsec = parsec_init(-1, &argc, &argv);
+
+    parsec_data_collection_init(&data_A, world, rank);
+    data_A.rank_of = rank_of;
+    data_A.vpid_of = vpid_of;
+    data_A.data_key = data_key;
+    data_A.data_of = data_of_A;
+
+    parsec_data_collection_init(&data_B, world, rank);
+    data_B.rank_of = rank_of;
+    data_B.vpid_of = vpid_of;
+    data_B.data_key = data_key;
+    data_B.data_of = data_of_B;
+
+    parsec_data_collection_init(&data_C, world, rank);
+    data_C.rank_of = rank_of;
+    data_C.vpid_of = vpid_of;
+    data_C.data_key = data_key;
+    data_C.data_of = data_of_C;
+
+    //mycounter = 300 + rank;
+    int test_data = 0;
+
+    ddata_A = parsec_data_create(
+        &ddata_A, &data_A, 0,
+        &test_data, sizeof(int),
+        PARSEC_DATA_FLAG_PARSEC_MANAGED);
+
+    ddata_B = parsec_data_create(
+        &ddata_B, &data_B, 0,
+        &test_data, sizeof(int),
+        PARSEC_DATA_FLAG_PARSEC_MANAGED);
+
+    ddata_C = parsec_data_create(
+        &ddata_C, &data_C, 0,
+        &test_data, sizeof(int),
+        PARSEC_DATA_FLAG_PARSEC_MANAGED);
+
+    tp = (parsec_taskpool_t*)parsec_test_new(&data_A, &data_B, &data_C, rank, world, MATRIX_M, MATRIX_N, MATRIX_DEPTH);
+
+    rc = parsec_context_add_taskpool( parsec, tp );
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    rc = parsec_context_wait(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+    parsec_taskpool_free(tp);
+
+    parsec_data_destroy( ddata_A );
+    parsec_data_destroy( ddata_B );
+    parsec_data_destroy( ddata_C );
+
+    parsec_data_collection_destroy(&data_A);
+    parsec_data_collection_destroy(&data_B);
+    parsec_data_collection_destroy(&data_C);
+
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    return 0;
+}
+
+%}

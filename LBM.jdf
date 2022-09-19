@@ -1,0 +1,407 @@
+extern "C" %{
+
+/**
+ * This second example shows how to create a simple jdf that has only one single task.
+ *    JDF syntax
+ *    parsec_JDFNAME_New()
+ *    parsec_context_add_taskpool()
+ *    parsec_data_collection_init()
+ *
+ * Can play with the HelloWorld bounds to show embarissingly parallel algorithm.
+ *
+ * @version 3.0
+ * @email parsec-users@icl.utk.edu
+ *
+ */
+
+/* Paste code to allocate a matrix in desc if cond_init is true */
+#define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)      \
+    TYPE##_t DC;                                                     \
+    if(COND) {                                                          \
+        TYPE##_init INIT_PARAMS;                                        \
+        DC.mat = parsec_data_allocate((size_t)DC.super.nb_local_tiles * \
+                                        (size_t)DC.super.bsiz *      \
+                                        (size_t)parsec_datadist_getsizeoftype(DC.super.mtype)); \
+        parsec_data_collection_set_key((parsec_data_collection_t*)&DC, #DC);          \
+    }
+
+#include <math.h>
+#include "parsec.h"
+#include "parsec/data_dist/matrix/matrix.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+#include "parsec/data_dist/multidimensional_grid.h"
+
+#include "cublas_v2.h"
+
+#define PROBLEM_M (64*256)
+#define PROBLEM_N (64*256)
+#define PROBLEM_K (64*256)
+
+#define CHUNK_SIZE_X 16
+#define CHUNK_SIZE_Y 16
+#define CHUNK_SIZE_Z 16
+
+#define TILE_SIZE 512
+#define MATRIX_M (PROBLEM_M)/(TILE_SIZE) // M rows
+#define MATRIX_N (PROBLEM_N)/(TILE_SIZE) // N columns
+#define MATRIX_K (PROBLEM_K)/(TILE_SIZE) // depth
+
+#define CHUNK_NUMBER_X (MATRIX_M/CHUNK_SIZE_X)
+#define CHUNK_NUMBER_Y (MATRIX_N/CHUNK_SIZE_Y)
+#define CHUNK_NUMBER_Z (MATRIX_K/CHUNK_SIZE_Z)
+
+
+typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
+                            cublasOperation_t transa, cublasOperation_t transb,
+                            int m, int n, int k,
+                            const double *alpha,
+                            const double *A, int lda,
+                            const double *B, int ldb,
+                            const double *beta,
+                            double       *C, int ldc);
+
+
+#if defined(PARSEC_HAVE_CUDA)
+static void destruct_cublas_handle(void *p)
+{
+    cublasHandle_t handle = (cublasHandle_t)p;
+    cublasStatus_t status;
+    if(NULL != handle) {
+        status = cublasDestroy(handle);
+        assert(status == CUBLAS_STATUS_SUCCESS);
+        (void)status;
+    }
+}
+
+static void *create_cublas_handle(void *obj, void *p)
+{
+    cublasHandle_t handle;
+    cublasStatus_t status;
+    parsec_cuda_exec_stream_t *stream = (parsec_cuda_exec_stream_t *)obj;
+    (void)p;
+    /* No need to call cudaSetDevice, as this has been done by PaRSEC before calling the task body */
+    status = cublasCreate(&handle);
+    assert(CUBLAS_STATUS_SUCCESS == status);
+    status = cublasSetStream(handle, stream->cuda_stream);
+    assert(CUBLAS_STATUS_SUCCESS == status);
+    (void)status;
+    return (void*)handle;
+}
+#endif
+
+static void destroy_cublas_handle(void *_h, void *_n)
+{
+#if defined(PARSEC_HAVE_CUDA)
+    cublasHandle_t cublas_handle = (cublasHandle_t)_h;
+    cublasDestroy_v2(cublas_handle);
+#endif
+    (void)_n;
+    (void)_h;
+}
+
+
+%}
+
+
+descA  [ type="parsec_multidimensional_grid_t*" ]
+descB  [ type="parsec_multidimensional_grid_t*" ]
+descC  [ type="parsec_multidimensional_grid_t*" ]
+
+
+rank   [ type="int" ]
+nodes   [ type="int" ]
+matrix_size_m   [ type="int" ] // row number
+matrix_size_n   [ type="int" ] // column number
+matrix_size_k   [ type="int" ]
+chunk_number_x   [ type="int" ]
+chunk_number_y   [ type="int" ]
+chunk_number_z   [ type="int" ]
+chunk_size_x   [ type="int" ]
+chunk_size_y   [ type="int" ]
+chunk_size_z   [ type="int" ]
+CuHI              [type = "parsec_info_id_t"]
+
+
+FillA(m, k)
+
+m = 0 .. matrix_size_m-1
+k = 0 .. matrix_size_k-1
+
+: descA(m, k)
+
+RW A <- descA(m, k)
+    -> A GEMM(m, 0 .. matrix_size_n-1, k)
+
+BODY
+    //int rank = this_task->parsec_context->my_rank;
+
+    double *matA = A;
+
+//printf("process %d fills matrix A at coordinates %d, %d\n", rank, m, k);
+
+    for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
+    {
+        //matA[i] = (double)((151+i+i*i*8)%256);
+        matA[i] = 1;
+    }
+END
+
+FillB(k, n)
+
+n = 0 .. matrix_size_n-1
+k = 0 .. matrix_size_k-1
+
+: descB(k, n)
+
+RW B <- descB(k, n)
+    -> B GEMM(0 .. matrix_size_m-1, n, k)
+
+BODY
+    double *matB = B;
+
+//printf("process %d fills matrix B at coordinates %d, %d\n", rank, k, n);
+
+    for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
+    {
+        //matB[i] = (double)((151+i+i*i*8)%256);
+        matB[i] = 1;
+    }
+END
+
+Sync(x, y)
+
+x = 0 .. chunk_number_x-1
+y = 0 .. chunk_number_y-1
+
+// TODO check
+: descC(x, y)
+
+CTL X <- X GEMM(
+        x*chunk_size_x .. (x+1)*chunk_size_x-1,
+        y*chunk_size_y .. (y+1)*chunk_size_y-1,
+        matrix_size_k-1)
+    -> (x==chunk_number_x-1 && y==chunk_number_y-1) ?
+            X PrintC(0 .. matrix_size_m-1, 0 .. matrix_size_n-1)
+    -> (x==chunk_number_x-1 && y!=chunk_number_y-1) ?
+            X GEMM(
+            0*chunk_size_x .. 1*chunk_size_x-1,
+            (y+1)*chunk_size_y .. (y+2)*chunk_size_y-1,
+            0)
+    -> (x!=chunk_number_x-1) ?
+            X GEMM(
+            (x+1)*chunk_size_x .. (x+2)*chunk_size_x-1,
+            y*chunk_size_y .. (y+1)*chunk_size_y-1,
+            0)
+
+BODY
+END
+
+
+GEMM(m, n, k)
+
+m = 0 .. matrix_size_m-1
+n = 0 .. matrix_size_n-1
+k = 0 .. matrix_size_k-1
+
+: descC(m, n)
+
+
+READ A <- A FillA(m, k)
+READ B <- B FillB(k, n)
+RW C <- (k==0) ? descC(m, n) : C GEMM(m, n, k-1)
+    -> (k<matrix_size_k-1) ? C GEMM(m, n, k+1) : C PrintC(m, n)
+
+CTL X -> (k==matrix_size_k-1) ? X Sync(m/chunk_size_x, n/chunk_size_y)
+    <- (k == 0 && m/chunk_size_x == 0 && n/chunk_size_y != 0) ?
+            X Sync(
+            chunk_number_x-1,
+            n/chunk_size_y-1)
+    <- (k == 0 && m/chunk_size_x != 0) ?
+            X Sync(
+            m/chunk_size_x-1,
+            n/chunk_size_y)
+
+BODY [type=CUDA
+      dyld=cublasDgemm_v2 dyldtype=cublas_dgemm_v2_t
+      weight=(1)]
+
+    double *matA = A;
+    double *matB = B;
+    double *matC = C;
+
+    cublasStatus_t status;
+    cublasHandle_t handle;
+    double alpha=1.0;
+    double beta=1.0;
+    if(k == 0)
+        beta=0;
+    handle = parsec_info_get(&gpu_stream->infos, CuHI);
+    assert(NULL != handle);
+    status = parsec_body.dyld_fn( handle,
+                CUBLAS_OP_N, CUBLAS_OP_N, 
+                descA->super.mb, descA->super.nb, descA->super.mb,
+                &alpha, matA, descA->super.mb,
+                matB, descB->super.mb,
+                &beta, matC, descC->super.mb );
+    PARSEC_CUDA_CHECK_ERROR( "cublasDgemm_v2 ", status,
+            {return -1;} );
+END
+
+/*
+BODY
+    fprintf(stderr, "Kernel GEMM(%d, %d, %d) in nvlink test is running on a CPU, which is not the intended behavior\n",
+            m, n, k);
+END
+*/
+
+PrintC(m, n)
+
+m = 0 .. matrix_size_m-1
+n = 0 .. matrix_size_n-1
+
+: descC(m, n)
+
+READ C <- C GEMM(m, n, matrix_size_k-1)
+CTL X <- X Sync(chunk_number_x-1, chunk_number_y-1)
+
+BODY
+    double *matC = C;
+
+    //printf("process %d matC %d, %d = %f\n", rank, m, n, matC[0]);
+END
+
+
+extern "C" %{
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    int rc;
+    int rank, world;
+    parsec_LBM_taskpool_t *tp;
+    //int mycounter;
+
+    parsec_arena_datatype_t adt;
+    parsec_datatype_t otype;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+    world = 1;
+    rank = 0;
+#endif
+
+    parsec = parsec_init(-1, &argc, &argv);
+
+    //mycounter = 300 + rank;
+    int test_data = 0;
+
+    int nodes = world;
+
+    #if defined(PARSEC_HAVE_CUDA)
+    parsec_info_id_t CuHI = parsec_info_register(&parsec_per_stream_infos, "CUBLAS::HANDLE",
+                                                 destroy_cublas_handle, NULL,
+                                                 create_cublas_handle, NULL,
+                                                 NULL);
+    assert(CuHI != -1);
+#else
+    int CuHI = -1;
+#endif
+
+    //int KP = sqrt(nodes);
+    //int KQ = nodes/KP;
+    int KP = 1;
+    int KQ = 1;
+
+    PASTE_CODE_ALLOCATE_MATRIX(descA, true, parsec_multidimensional_grid, (
+                               &descA,
+                               PARSEC_MATRIX_DOUBLE,
+                               PARSEC_MATRIX_TILE,
+                               rank,
+                               TILE_SIZE,      TILE_SIZE,   /* Tile size */
+                               MATRIX_M*TILE_SIZE,    MATRIX_K*TILE_SIZE,   /* Global matrix size (what is stored)*/
+                               0,           0,    /* Staring point in the global matrix */
+                               MATRIX_M,    MATRIX_K,    /* Submatrix size (the one concerned by the computation */
+                               KP,          KQ,    /* process process grid*/
+                               2,           2,   /* k-cyclicity */
+                               0,           0)   /* starting point on the process grid*/
+                            );
+
+    PASTE_CODE_ALLOCATE_MATRIX(descB, true, parsec_multidimensional_grid, (
+                               &descB,
+                               PARSEC_MATRIX_DOUBLE,
+                               PARSEC_MATRIX_TILE,
+                               rank,
+                               TILE_SIZE,      TILE_SIZE,   /* Tile size */
+                               MATRIX_K*TILE_SIZE,    MATRIX_N*TILE_SIZE,   /* Global matrix size (what is stored)*/
+                               0,           0,    /* Staring point in the global matrix */
+                               MATRIX_K,    MATRIX_N,    /* Submatrix size (the one concerned by the computation */
+                               KP,          KQ,    /* process process grid*/
+                               2,           2,   /* k-cyclicity */
+                               0,           0)   /* starting point on the process grid*/
+                            );
+
+    PASTE_CODE_ALLOCATE_MATRIX(descC, true, parsec_multidimensional_grid, (
+                               &descC,
+                               PARSEC_MATRIX_DOUBLE,
+                               PARSEC_MATRIX_TILE,
+                               rank,
+                               TILE_SIZE,      TILE_SIZE,   /* Tile size */
+                               MATRIX_M*TILE_SIZE,    MATRIX_N*TILE_SIZE,   /* Global matrix size (what is stored)*/
+                               0,           0,    /* Staring point in the global matrix */
+                               MATRIX_M,    MATRIX_N,    /* Submatrix size (the one concerned by the computation */
+                               KP,          KQ,    /* process process grid*/
+                               2,           2,   /* k-cyclicity */
+                               0,           0)   /* starting point on the process grid*/
+                            );
+
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
+    parsec_add2arena_rect(&adt, otype,
+                                 descC.super.mb, descC.super.nb, descC.super.mb);
+
+    tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
+                                &descA, &descB, &descC,
+                                rank, world,
+                                MATRIX_M, MATRIX_N, MATRIX_K,
+                                CHUNK_NUMBER_X, CHUNK_NUMBER_Y, CHUNK_NUMBER_Z,
+                                CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z,
+                                CuHI);
+
+    assert( NULL != tp );
+    tp->arenas_datatypes[PARSEC_LBM_DEFAULT_ADT_IDX] = adt;
+    PARSEC_OBJ_RETAIN(adt.arena);
+
+    rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    rc = parsec_context_wait(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+printf("final : %f\n", ((double*)(descC.mat))[0]);
+
+    parsec_taskpool_free(&tp->super);
+
+    parsec_data_free(descA.mat);
+    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descA);
+
+    parsec_data_free(descB.mat);
+    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descB);
+
+    parsec_data_free(descC.mat);
+    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descC);
+
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    return 0;
+}
+
+%}

@@ -1,0 +1,21 @@
+
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig
+export LDFLAGS=`pkg-config --libs parsec`
+export CFLAGS=`pkg-config --cflags parsec`
+
+/usr/local/bin/parsec-ptgpp -i test.jdf -o test
+gcc $CFLAGS test.c $LDFLAGS
+LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/lib64:/usr/local/lib mpiexec -n 4 ./a.out
+
+
+/usr/local/bin/parsec-ptgpp -i GEMM_V1.jdf -o GEMM_V1
+gcc $CFLAGS GEMM_V1.c $LDFLAGS -o GEMM_V1
+/usr/local/bin/parsec-ptgpp -i GEMM_V2.jdf -o GEMM_V2
+gcc $CFLAGS GEMM_V2.c $LDFLAGS -o GEMM_V2
+/usr/local/bin/parsec-ptgpp -i GEMM_V3.jdf -o GEMM_V3
+gcc $CFLAGS GEMM_V3.c -o GEMM_V3 -L /usr/local/cuda/lib64 -lcudart -lcublas $LDFLAGS
+
+/usr/local/bin/parsec-ptgpp -i GEMM_GPU.jdf -o GEMM_GPU
+gcc -O3 $CFLAGS GEMM_GPU.c -o GEMM_GPU -L /usr/local/cuda/lib64 -lcudart -lcublas $LDFLAGS 
+/usr/local/bin/parsec-ptgpp -i GEMM_CHUNKED_GPU.jdf -o GEMM_CHUNKED_GPU
+gcc -O3 $CFLAGS GEMM_CHUNKED_GPU.c -o GEMM_CHUNKED_GPU -L /usr/local/cuda/lib64 -lcudart -lcublas $LDFLAGS 
