@@ -19,9 +19,9 @@ extern "C" %{
     TYPE##_t DC;                                                     \
     if(COND) {                                                          \
         TYPE##_init INIT_PARAMS;                                        \
-        DC.mat = parsec_data_allocate((size_t)DC.super.nb_local_tiles * \
-                                        (size_t)DC.super.bsiz *      \
-                                        (size_t)parsec_datadist_getsizeoftype(DC.super.mtype)); \
+        DC.grid = parsec_data_allocate((size_t)DC.nb_local_tiles * \
+                                        (size_t)DC.bsiz *         \
+                                        (size_t)parsec_datadist_getsizeoftype(DC.mtype)); \
         parsec_data_collection_set_key((parsec_data_collection_t*)&DC, #DC);          \
     }
 
@@ -137,7 +137,7 @@ BODY
 
     double *matA = A;
 
-//printf("process %d fills matrix A at coordinates %d, %d\n", rank, m, k);
+printf("process %d fills matrix A at coordinates %d, %d\n", rank, m, k);
 
     for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
     {
@@ -159,7 +159,7 @@ RW B <- descB(k, n)
 BODY
     double *matB = B;
 
-//printf("process %d fills matrix B at coordinates %d, %d\n", rank, k, n);
+printf("process %d fills matrix B at coordinates %d, %d\n", rank, k, n);
 
     for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
     {
@@ -239,10 +239,10 @@ BODY [type=CUDA
     assert(NULL != handle);
     status = parsec_body.dyld_fn( handle,
                 CUBLAS_OP_N, CUBLAS_OP_N, 
-                descA->super.mb, descA->super.nb, descA->super.mb,
-                &alpha, matA, descA->super.mb,
-                matB, descB->super.mb,
-                &beta, matC, descC->super.mb );
+                MATRIX_M, MATRIX_N, MATRIX_K,
+                &alpha, matA, MATRIX_M,
+                matB, MATRIX_N,
+                &beta, matC, MATRIX_K );
     PARSEC_CUDA_CHECK_ERROR( "cublasDgemm_v2 ", status,
             {return -1;} );
 END
@@ -318,51 +318,58 @@ int main(int argc, char *argv[])
     int KP = 1;
     int KQ = 1;
 
+/*
+    parsec_multidimensional_grid_t descD;
+    parsec_multidimensional_grid_init(
+                               &descD,
+                               PARSEC_MATRIX_DOUBLE,
+                               rank,
+                               2,
+                               MATRIX_M, MATRIX_K,
+                               TILE_SIZE,      TILE_SIZE,
+                               1, 1
+                            );
+    descD.grid = parsec_data_allocate((size_t)descD.nb_local_tiles *
+                                    (size_t)descD.bsiz *
+                                    (size_t)parsec_datadist_getsizeoftype(descD.mtype));
+    parsec_data_collection_set_key((parsec_data_collection_t*)&descD, "descD");
+
+    printf("coucou\n");
+*/
+
     PASTE_CODE_ALLOCATE_MATRIX(descA, true, parsec_multidimensional_grid, (
                                &descA,
                                PARSEC_MATRIX_DOUBLE,
-                               PARSEC_MATRIX_TILE,
                                rank,
+                               2,
+                               MATRIX_M, MATRIX_K,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
-                               MATRIX_M*TILE_SIZE,    MATRIX_K*TILE_SIZE,   /* Global matrix size (what is stored)*/
-                               0,           0,    /* Staring point in the global matrix */
-                               MATRIX_M,    MATRIX_K,    /* Submatrix size (the one concerned by the computation */
-                               KP,          KQ,    /* process process grid*/
-                               2,           2,   /* k-cyclicity */
-                               0,           0)   /* starting point on the process grid*/
+                               1, 1)
                             );
 
     PASTE_CODE_ALLOCATE_MATRIX(descB, true, parsec_multidimensional_grid, (
                                &descB,
                                PARSEC_MATRIX_DOUBLE,
-                               PARSEC_MATRIX_TILE,
                                rank,
+                               2,
+                               MATRIX_M, MATRIX_K,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
-                               MATRIX_K*TILE_SIZE,    MATRIX_N*TILE_SIZE,   /* Global matrix size (what is stored)*/
-                               0,           0,    /* Staring point in the global matrix */
-                               MATRIX_K,    MATRIX_N,    /* Submatrix size (the one concerned by the computation */
-                               KP,          KQ,    /* process process grid*/
-                               2,           2,   /* k-cyclicity */
-                               0,           0)   /* starting point on the process grid*/
+                               1, 1)
                             );
 
     PASTE_CODE_ALLOCATE_MATRIX(descC, true, parsec_multidimensional_grid, (
                                &descC,
                                PARSEC_MATRIX_DOUBLE,
-                               PARSEC_MATRIX_TILE,
                                rank,
+                               2,
+                               MATRIX_M, MATRIX_K,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
-                               MATRIX_M*TILE_SIZE,    MATRIX_N*TILE_SIZE,   /* Global matrix size (what is stored)*/
-                               0,           0,    /* Staring point in the global matrix */
-                               MATRIX_M,    MATRIX_N,    /* Submatrix size (the one concerned by the computation */
-                               KP,          KQ,    /* process process grid*/
-                               2,           2,   /* k-cyclicity */
-                               0,           0)   /* starting point on the process grid*/
+                               1, 1)
                             );
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
     parsec_add2arena_rect(&adt, otype,
-                                 descC.super.mb, descC.super.nb, descC.super.mb);
+                                 TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
                                 &descA, &descB, &descC,
@@ -383,18 +390,17 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
-printf("final : %f\n", ((double*)(descC.mat))[0]);
 
     parsec_taskpool_free(&tp->super);
 
-    parsec_data_free(descA.mat);
-    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descA);
+    //parsec_data_free(descA.grid);
+    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descA);
 
-    parsec_data_free(descB.mat);
-    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descB);
+    //parsec_data_free(descB.grid);
+    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descB);
 
-    parsec_data_free(descC.mat);
-    parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descC);
+    //parsec_data_free(descC.grid);
+    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descC);
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)
