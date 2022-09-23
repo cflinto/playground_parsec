@@ -244,6 +244,9 @@ BODY [type=CUDA
                 &beta, matC, descC->super.mb );
     PARSEC_CUDA_CHECK_ERROR( "cublasDgemm_v2 ", status,
             {return -1;} );
+printf("process %d computes matrix C at coordinates %d, %d, %d (values = %d, %d, %d, %d, %d, %d)\n",
+        rank, m, n, k, descA->super.mb, descA->super.nb, descA->super.mb, descA->super.mb, descB->super.mb, descC->super.mb);
+
 END
 
 /*

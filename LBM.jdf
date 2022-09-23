@@ -33,13 +33,13 @@ extern "C" %{
 
 #include "cublas_v2.h"
 
-#define PROBLEM_M (64*256)
-#define PROBLEM_N (64*256)
-#define PROBLEM_K (64*256)
+#define PROBLEM_M (8*256)
+#define PROBLEM_N (8*256)
+#define PROBLEM_K (8*256)
 
-#define CHUNK_SIZE_X 16
-#define CHUNK_SIZE_Y 16
-#define CHUNK_SIZE_Z 16
+#define CHUNK_SIZE_X 4
+#define CHUNK_SIZE_Y 4
+#define CHUNK_SIZE_Z 4
 
 #define TILE_SIZE 512
 #define MATRIX_M (PROBLEM_M)/(TILE_SIZE) // M rows
@@ -137,7 +137,7 @@ BODY
 
     double *matA = A;
 
-printf("process %d fills matrix A at coordinates %d, %d\n", rank, m, k);
+//printf("process %d fills matrix A at coordinates %d, %d\n", rank, m, k);
 
     for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
     {
@@ -159,7 +159,7 @@ RW B <- descB(k, n)
 BODY
     double *matB = B;
 
-printf("process %d fills matrix B at coordinates %d, %d\n", rank, k, n);
+//printf("process %d fills matrix B at coordinates %d, %d\n", rank, k, n);
 
     for(int i=0;i<TILE_SIZE*TILE_SIZE;++i)
     {
@@ -239,12 +239,17 @@ BODY [type=CUDA
     assert(NULL != handle);
     status = parsec_body.dyld_fn( handle,
                 CUBLAS_OP_N, CUBLAS_OP_N, 
-                MATRIX_M, MATRIX_N, MATRIX_K,
-                &alpha, matA, MATRIX_M,
-                matB, MATRIX_N,
-                &beta, matC, MATRIX_K );
+                TILE_SIZE, TILE_SIZE, TILE_SIZE,
+                &alpha, matA, TILE_SIZE,
+                matB, TILE_SIZE,
+                &beta, matC, TILE_SIZE );
     PARSEC_CUDA_CHECK_ERROR( "cublasDgemm_v2 ", status,
             {return -1;} );
+printf("process %d computes matrix C at coordinates %d, %d, %d\n", rank, m, n, k);
+//printf("process %d: matA = %u\n", rank, matA);
+//printf("process %d: matB = %u\n", rank, matB);
+//printf("process %d: matC = %u\n", rank, matC);
+
 END
 
 /*
@@ -267,7 +272,7 @@ CTL X <- X Sync(chunk_number_x-1, chunk_number_y-1)
 BODY
     double *matC = C;
 
-    //printf("process %d matC %d, %d = %f\n", rank, m, n, matC[0]);
+    //printf("process %d print matC %d, %d = %f\n", rank, m, n, matC[0]);
 END
 
 
@@ -333,14 +338,12 @@ int main(int argc, char *argv[])
                                     (size_t)descD.bsiz *
                                     (size_t)parsec_datadist_getsizeoftype(descD.mtype));
     parsec_data_collection_set_key((parsec_data_collection_t*)&descD, "descD");
-
-    printf("coucou\n");
 */
 
     PASTE_CODE_ALLOCATE_MATRIX(descA, true, parsec_multidimensional_grid, (
                                &descA,
                                PARSEC_MATRIX_DOUBLE,
-                               rank,
+                               nodes, rank,
                                2,
                                MATRIX_M, MATRIX_K,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
@@ -350,7 +353,7 @@ int main(int argc, char *argv[])
     PASTE_CODE_ALLOCATE_MATRIX(descB, true, parsec_multidimensional_grid, (
                                &descB,
                                PARSEC_MATRIX_DOUBLE,
-                               rank,
+                               nodes, rank,
                                2,
                                MATRIX_M, MATRIX_K,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
@@ -360,9 +363,9 @@ int main(int argc, char *argv[])
     PASTE_CODE_ALLOCATE_MATRIX(descC, true, parsec_multidimensional_grid, (
                                &descC,
                                PARSEC_MATRIX_DOUBLE,
-                               rank,
+                               nodes, rank,
                                2,
-                               MATRIX_M, MATRIX_K,
+                               MATRIX_M, MATRIX_N,
                                TILE_SIZE,      TILE_SIZE,   /* Tile size */
                                1, 1)
                             );
@@ -390,17 +393,19 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
+printf("final : %f\n", ((double*)(descC.grid))[0]);
+
 
     parsec_taskpool_free(&tp->super);
 
-    //parsec_data_free(descA.grid);
-    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descA);
+    parsec_data_free(descA.grid);
+    parsec_grid_destroy(&descA);
 
-    //parsec_data_free(descB.grid);
-    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descB);
+    parsec_data_free(descB.grid);
+    parsec_grid_destroy(&descB);
 
-    //parsec_data_free(descC.grid);
-    //parsec_tiled_matrix_destroy( (parsec_tiled_matrix_t*)&descC);
+    parsec_data_free(descC.grid);
+    parsec_grid_destroy(&descC);
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)
