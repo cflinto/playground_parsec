@@ -22,6 +22,7 @@ extern "C" %{
         DC.grid = parsec_data_allocate((size_t)DC.nb_local_tiles * \
                                         (size_t)DC.bsiz *         \
                                         (size_t)parsec_datadist_getsizeoftype(DC.mtype)); \
+        assert(DC.grid != NULL);                                        \
         parsec_data_collection_set_key((parsec_data_collection_t*)&DC, #DC);          \
     }
 
@@ -33,13 +34,18 @@ extern "C" %{
 
 #include "cublas_v2.h"
 
-#define PROBLEM_SIZE_X (512*2)
-#define PROBLEM_SIZE_Y (512*2)
-#define PROBLEM_SIZE_Z (512*2)
+#define PROBLEM_SIZE_X (128)
+#define PROBLEM_SIZE_Y (128)
+#define PROBLEM_SIZE_Z (128)
 
-#define TILE_SIZE_X (64)
-#define TILE_SIZE_Y (64)
-#define TILE_SIZE_Z (64)
+#define PROBLEM_D 4
+#define PROBLEM_Q 9
+
+#define PROBLEM_DC (PROBLEM_D*PROBLEM_Q)
+
+#define TILE_SIZE_X (32)
+#define TILE_SIZE_Y (32)
+#define TILE_SIZE_Z (32)
 
 #define SUBGRID_NUMBER_X ((PROBLEM_SIZE_X)/(TILE_SIZE_X))
 #define SUBGRID_NUMBER_Y ((PROBLEM_SIZE_Y)/(TILE_SIZE_Y))
@@ -144,17 +150,14 @@ z = 0 .. subgrid_number_z-1
 RW A <- A FillGrid(x, y, z)
     -> descGrid(x, y, z)
 
-/*
-BODY [type=CUDA
-      dyld=cublasDgemm_v2 dyldtype=cublas_dgemm_v2_t
-      weight=(1)]
+BODY [type=CUDA]
 
     // do nothing
 
     printf("[Process %d] kernel LBM (%d, %d, %d) is called\n", rank, x, y, z);
 END
-*/
 
+/*
 BODY
     double *grid = A;
 
@@ -165,7 +168,7 @@ BODY
         grid[i] += 1;
     }
 END
-
+*/
 
 
 
