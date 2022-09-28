@@ -15,15 +15,18 @@ extern "C" %{
  */
 
 /* Paste code to allocate a matrix in desc if cond_init is true */
-#define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)      \
-    TYPE##_t DC;                                                     \
-    if(COND) {                                                          \
-        TYPE##_init INIT_PARAMS;                                        \
-        DC.grid = parsec_data_allocate((size_t)DC.nb_local_tiles * \
-                                        (size_t)DC.bsiz *         \
-                                        (size_t)parsec_datadist_getsizeoftype(DC.mtype)); \
-        assert(DC.grid != NULL);                                        \
-        parsec_data_collection_set_key((parsec_data_collection_t*)&DC, #DC);          \
+#define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)                                     \
+    TYPE##_t *DC = (TYPE##_t*)malloc(sizeof(TYPE##_t)*PROBLEM_DC);                                                                        \
+    if(COND) {                                                                                      \
+        for(int i=0;i<PROBLEM_DC;++i)                                                               \
+        {                                                                                           \
+            TYPE##_init INIT_PARAMS;                                                                \
+            DC[i].grid = parsec_data_allocate((size_t)DC[i].nb_local_tiles *                              \
+                                            (size_t)DC[i].bsiz *                                       \
+                                            (size_t)parsec_datadist_getsizeoftype(DC[i].mtype));       \
+            assert(DC[i].grid != NULL);                                                                \
+            parsec_data_collection_set_key((parsec_data_collection_t*)&DC[i], #DC);                    \
+        }                                                                                           \
     }
 
 #include <math.h>
@@ -39,9 +42,9 @@ extern "C" %{
 #define PROBLEM_SIZE_Z (128)
 
 #define PROBLEM_D 4
-#define PROBLEM_Q 9
+#define PROBLEM_C 9
 
-#define PROBLEM_DC (PROBLEM_D*PROBLEM_Q)
+#define PROBLEM_DC (PROBLEM_D*PROBLEM_C)
 
 #define TILE_SIZE_X (32)
 #define TILE_SIZE_Y (32)
@@ -104,7 +107,7 @@ static void destroy_cublas_handle(void *_h, void *_n)
 %}
 
 
-descGrid  [ type="parsec_multidimensional_grid_t*" ]
+descGridDC  [ type="parsec_multidimensional_grid_t*" array_size=PROBLEM_DC ]
 
 
 rank   [ type="int" ]
@@ -115,22 +118,25 @@ subgrid_number_z   [ type="int" ]
 tile_size_x   [ type="int" ]
 tile_size_y   [ type="int" ]
 tile_size_z   [ type="int" ]
+conservatives_number   [ type="int" ]
+directions_number   [ type="int" ]
 CuHI              [type = "parsec_info_id_t"]
 
 
-FillGrid(x, y, z)
+FillGrid(x, y, z, dc)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
+dc = 0 .. conservatives_number*directions_number-1
 
-: descGrid(x, y, z)
+: descGridDC[dc](x, y, z)
 
-RW A <- descGrid(x, y, z)
-    -> A LBM(x, y, z)
+RW ANJNXHB <- descGridDC[dc](x, y, z)
+    -> ACDCZ22222 LBM(x, y, z, dc)
 
 BODY
-    double *grid = A;
+    double *grid = ANJNXHB;
 
     for(int i=0;i<TILE_SIZE_X*TILE_SIZE_Y*TILE_SIZE_Z;++i)
     {
@@ -139,16 +145,17 @@ BODY
 END
 
 
-LBM(x, y, z)
+LBM(x, y, z, dc)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
+dc = 0 .. conservatives_number*directions_number-1
 
-: descGrid(x, y, z)
+: descGridDC[dc](x, y, z)
 
-RW A <- A FillGrid(x, y, z)
-    -> descGrid(x, y, z)
+RW ACDCZ22222 <- ANJNXHB FillGrid(x, y, z, dc)
+    -> descGridDC[dc](x, y, z)
 
 BODY [type=CUDA]
 
@@ -211,8 +218,8 @@ int main(int argc, char *argv[])
     int CuHI = -1;
 #endif
 
-    PASTE_CODE_ALLOCATE_MATRIX(descGrid, true, parsec_multidimensional_grid, (
-                               &descGrid,
+    PASTE_CODE_ALLOCATE_MATRIX(descGridDC, true, parsec_multidimensional_grid, (
+                               &descGridDC[i],
                                PARSEC_MATRIX_DOUBLE,
                                nodes, rank,
                                3,
@@ -223,13 +230,13 @@ int main(int argc, char *argv[])
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
     parsec_add2arena_rect(&adt, otype,
-                                 TILE_SIZE_X, TILE_SIZE_Y*TILE_SIZE_Z, TILE_SIZE_X);
+                                 TILE_SIZE_X, TILE_SIZE_Y*TILE_SIZE_Z*PROBLEM_C*PROBLEM_D, TILE_SIZE_X);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
-                                &descGrid,
+                                descGridDC,
                                 rank, world,
                                 SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z,
-                                TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z,
+                                TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, PROBLEM_C, PROBLEM_D,
                                 CuHI);
 
     assert( NULL != tp );
@@ -243,13 +250,16 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
-printf("final : %f\n", ((double*)(descGrid.grid))[0]);
+printf("final : %f\n", ((double*)(descGridDC[0].grid))[0]);
 
 
     parsec_taskpool_free(&tp->super);
 
-    parsec_data_free(descGrid.grid);
-    parsec_grid_destroy(&descGrid);
+    for(int i=0;i<PROBLEM_DC;++i)
+    {
+        parsec_data_free(descGridDC[i].grid);
+        parsec_grid_destroy(&descGridDC[i]);
+    }
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)
