@@ -14,6 +14,20 @@ extern "C" %{
  *
  */
 
+#define gpuErrchk(ans)                        \
+	{                                         \
+		gpuAssert((ans), __FILE__, __LINE__, true); \
+	}
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort)
+			exit(code);
+	}
+}
+
 /* Paste code to allocate a matrix in desc if cond_init is true */
 #define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)                                     \
     TYPE##_t *DC = (TYPE##_t*)malloc(sizeof(TYPE##_t)*PROBLEM_DC);                                                                        \
@@ -37,12 +51,25 @@ extern "C" %{
 
 #include "cublas_v2.h"
 
+// LBM defines
+
+#define EPSILON 0.000000001
+
+#define CFL 0.45
+#define ALPHA 0.9
+#define BETA 0.9
+
+
+// HPC defines
+
+#define MAX_SUBGRIDS 256
+
 #define PROBLEM_SIZE_X (128)
 #define PROBLEM_SIZE_Y (128)
 #define PROBLEM_SIZE_Z (128)
 
-#define PROBLEM_D 4
-#define PROBLEM_C 9
+#define PROBLEM_D 1
+#define PROBLEM_C 1
 
 #define PROBLEM_DC (PROBLEM_D*PROBLEM_C)
 
@@ -53,6 +80,85 @@ extern "C" %{
 #define SUBGRID_NUMBER_X ((PROBLEM_SIZE_X)/(TILE_SIZE_X))
 #define SUBGRID_NUMBER_Y ((PROBLEM_SIZE_Y)/(TILE_SIZE_Y))
 #define SUBGRID_NUMBER_Z ((PROBLEM_SIZE_Z)/(TILE_SIZE_Z))
+
+typedef struct Grid
+{
+	int size[3];
+	int subspaces[3];
+	int subgridLogicSizeCompressed[3];
+	int subgridLogicSize[3];
+	int subgridTrueSize[3];
+	size_t subgridCompressedSize[MAX_SUBGRIDS];
+	size_t subgridTempSize[MAX_SUBGRIDS];
+	int cellsPerSubgrid;
+	int subgridsNumber;
+	double **subgridsCPU;
+	double **subgrids[2];
+	int currentSubgrid;
+	int overlap;
+	double mass[MAX_SUBGRIDS];
+	double physicalMinCoords[3];
+	double physicalSize[3];
+} Grid;
+
+Grid newGrid(void)
+{
+	Grid grid;
+
+	grid.size[0] = PROBLEM_SIZE_X;
+	grid.size[1] = PROBLEM_SIZE_Y;
+	grid.size[2] = PROBLEM_SIZE_Z;
+	grid.subspaces[0] = 2;
+	grid.subspaces[1] = 2;
+	grid.subspaces[2] = 2;
+	grid.subgridLogicSize[0] = PROBLEM_SIZE_X / grid.subspaces[0] + 1;
+	grid.subgridLogicSize[1] = PROBLEM_SIZE_Y / grid.subspaces[1] + 1;
+	grid.subgridLogicSize[2] = PROBLEM_SIZE_Z / grid.subspaces[2] + 1;
+	grid.overlap = 1;
+
+	grid.currentSubgrid = 0;
+
+	grid.physicalMinCoords[0] = -1;
+	grid.physicalMinCoords[1] = -1;
+	grid.physicalMinCoords[2] = -1;
+	grid.physicalSize[0] = 2;
+	grid.physicalSize[1] = 2;
+	grid.physicalSize[2] = 2;
+
+	grid.subgridLogicSizeCompressed[0] = grid.subgridLogicSize[0];
+	grid.subgridLogicSizeCompressed[1] = grid.subgridLogicSize[1];
+	grid.subgridLogicSizeCompressed[2] = grid.subgridLogicSize[2];
+	grid.subgridTrueSize[0] = grid.subgridLogicSize[0] + 2 * grid.overlap;
+	grid.subgridTrueSize[1] = grid.subgridLogicSize[1] + 2 * grid.overlap;
+	grid.subgridTrueSize[2] = grid.subgridLogicSize[2] + 2 * grid.overlap;
+	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]) * (grid.subgridTrueSize[2]);
+	grid.subgridsNumber = grid.subspaces[0] * grid.subspaces[1] * grid.subspaces[2];
+
+	grid.subgridsCPU = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
+	grid.subgrids[0] = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
+	grid.subgrids[1] = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
+
+	for (int i = 0; i < grid.subgridsNumber; ++i)
+	{
+		// init to a random value
+		grid.subgridCompressedSize[i] = 0;
+		grid.subgridTempSize[i] = 0;
+
+		// malloc the subgrids on the CPU
+		grid.subgridsCPU[i] = (double *)malloc(grid.cellsPerSubgrid * sizeof(double));
+
+		//gpuErrchk(cudaMalloc(&grid.subgrids[0][i], grid.cellsPerSubgrid * sizeof(double)));
+		//gpuErrchk(cudaMalloc(&grid.subgrids[1][i], grid.cellsPerSubgrid * sizeof(double)));
+
+		// fill with zeros
+		for (int j = 0; j < grid.cellsPerSubgrid; ++j)
+		{
+			grid.subgridsCPU[i][j] = 0;
+		}
+	}
+
+	return grid;
+}
 
 
 typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
@@ -107,7 +213,7 @@ static void destroy_cublas_handle(void *_h, void *_n)
 %}
 
 
-descGridDC  [ type="parsec_multidimensional_grid_t*" array_size=PROBLEM_DC ]
+descGridDC  [ type="parsec_multidimensional_grid_t*" ]
 
 
 rank   [ type="int" ]
@@ -120,23 +226,29 @@ tile_size_y   [ type="int" ]
 tile_size_z   [ type="int" ]
 conservatives_number   [ type="int" ]
 directions_number   [ type="int" ]
+number_of_steps   [ type="int" ]
 CuHI              [type = "parsec_info_id_t"]
 
 
-FillGrid(x, y, z, dc)
+FillGrid(x, y, z, c, d)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
-dc = 0 .. conservatives_number*directions_number-1
+c = 0 .. conservatives_number-1
+d = 0 .. directions_number-1
 
-: descGridDC[dc](x, y, z)
+: descGridDC(x, y, z, c, d)
 
-RW ANJNXHB <- descGridDC[dc](x, y, z)
-    -> ACDCZ22222 LBM(x, y, z, dc)
+/*
+RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
+    -> (c==0 && d==0) ? GRID_CD_0_0 LBM(x, y, z)
+*/
+RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
+    -> GRID LBM_SUBGRID(x, y, z, c, d, 0)
 
 BODY
-    double *grid = ANJNXHB;
+    double *grid = INITIAL_GRID;
 
     for(int i=0;i<TILE_SIZE_X*TILE_SIZE_Y*TILE_SIZE_Z;++i)
     {
@@ -145,28 +257,38 @@ BODY
 END
 
 
-LBM(x, y, z, dc)
+LBM_SUBGRID(x, y, z, c, d, s)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
-dc = 0 .. conservatives_number*directions_number-1
+c = 0 .. conservatives_number-1
+d = 0 .. directions_number-1
+s = 0 .. number_of_steps-1
 
-: descGridDC[dc](x, y, z)
+: descGridDC(x, y, z, c, d)
 
-RW ACDCZ22222 <- ANJNXHB FillGrid(x, y, z, dc)
-    -> descGridDC[dc](x, y, z)
+/*
+RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : LBM_SUBGRID(x, y, z, s-1)
+    -> descGridDC(x, y, z, 0, 0)
+*/
+RW GRID <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d) : GRID LBM_SUBGRID(x, y, z, c, d, s-1)
+    -> (s<number_of_steps-1) ? GRID LBM_SUBGRID(x, y, z, c, d, s+1) : descGridDC(x, y, z, c, d)
 
 BODY [type=CUDA]
+/*
+    double *subgrid[PROBLEM_C][PROBLEM_D];
+    subgrid[0][0] = GRID_CD_0_0;
+*/
+    double *grid = GRID;
 
-    // do nothing
-
-    printf("[Process %d] kernel LBM (%d, %d, %d) is called\n", rank, x, y, z);
+    printf("[Process %d] kernel LBM (%d, %d, %d) is called (subgrid=%p)\n", rank, x, y, z, grid);
 END
 
 /*
 BODY
-    double *grid = A;
+    double *subgrid[PROBLEM_C][PROBLEM_D];
+    subgrid[0][0] = GRID_CD_0_0;
 
     printf("[Process %d] kernel LBM (%d, %d, %d) is called, grid=%p\n", rank, x, y, z, grid);
 
@@ -204,6 +326,15 @@ int main(int argc, char *argv[])
     rank = 0;
 #endif
 
+    // LBM parameters
+    Grid grid = newGrid();
+
+    double delta_x = grid.physicalSize[0] / (double)grid.size[0];
+    double dt = CFL * delta_x / (ALPHA > BETA ? ALPHA : BETA);
+
+    double tmax = 1;
+    int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
+
     parsec = parsec_init(-1, &argc, &argv);
 
     int nodes = world;
@@ -222,10 +353,10 @@ int main(int argc, char *argv[])
                                &descGridDC[i],
                                PARSEC_MATRIX_DOUBLE,
                                nodes, rank,
-                               3,
-                               SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y,SUBGRID_NUMBER_Z,
-                               TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z,
-                               1, 1, 1)
+                               5,
+                               SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z, PROBLEM_C, PROBLEM_D,
+                               TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, 1, 1,
+                               1, 1, 1, 1, 1)
                             );
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
@@ -237,6 +368,7 @@ int main(int argc, char *argv[])
                                 rank, world,
                                 SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z,
                                 TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, PROBLEM_C, PROBLEM_D,
+                                number_of_steps,
                                 CuHI);
 
     assert( NULL != tp );
