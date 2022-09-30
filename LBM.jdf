@@ -64,12 +64,12 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (128)
-#define PROBLEM_SIZE_Y (128)
-#define PROBLEM_SIZE_Z (128)
+#define PROBLEM_SIZE_X (64)
+#define PROBLEM_SIZE_Y (64)
+#define PROBLEM_SIZE_Z (64)
 
-#define PROBLEM_D 1
-#define PROBLEM_C 1
+#define PROBLEM_D 2
+#define PROBLEM_C 3
 
 #define PROBLEM_DC (PROBLEM_D*PROBLEM_C)
 
@@ -240,12 +240,14 @@ d = 0 .. directions_number-1
 
 : descGridDC(x, y, z, c, d)
 
-/*
-RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
-    -> (c==0 && d==0) ? GRID_CD_0_0 LBM(x, y, z)
-*/
 RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> (c==0 && d==0) ? GRID_CD_0_0 LBM_SUBGRID(x, y, z, c, d, 0)
+    -> (c==1 && d==0) ? GRID_CD_1_0 LBM_SUBGRID(x, y, z, c, d, 0)
+    -> (c==2 && d==0) ? GRID_CD_2_0 LBM_SUBGRID(x, y, z, c, d, 0)
+    -> (c==0 && d==1) ? GRID_CD_0_1 LBM_SUBGRID(x, y, z, c, d, 0)
+    -> (c==1 && d==1) ? GRID_CD_1_1 LBM_SUBGRID(x, y, z, c, d, 0)
+    -> (c==2 && d==1) ? GRID_CD_2_1 LBM_SUBGRID(x, y, z, c, d, 0)
+
 
 BODY
     double *grid = INITIAL_GRID;
@@ -254,6 +256,8 @@ BODY
     {
         grid[i] = 1;
     }
+
+    printf("FillGrid: %d %d %d %d %d\n", x, y, z, c, d);
 END
 
 
@@ -264,24 +268,50 @@ y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
 c = 0 .. conservatives_number-1
 d = 0 .. directions_number-1
-s = 0 .. number_of_steps-1
+s = 0 .. number_of_steps // the last step transfers the data back to the desc
 
 : descGridDC(x, y, z, c, d)
 
-//READ GRID <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
-
 READ GRID_CD_0_0 <- (c==0 && d==0 && s>0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s-1)
     <- (c==0 && d==0 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
-    -> (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
+    <- (!(c==0 && d==0)) ? NEW
+    -> (c==0 && d==0 && s<number_of_steps) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
+    -> (c==0 && d==0 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
 
-    //-> (s<number_of_steps-1) ? GRID LBM_SUBGRID(x, y, z, c, d, s+1) : descGridDC(x, y, z, c, d)
+READ GRID_CD_1_0 <- (c==1 && d==0 && s>0) ? GRID_CD_1_0 LBM_STEP(x, y, z, s-1)
+    <- (c==1 && d==0 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
+    <- (!(c==1 && d==0)) ? NEW
+    -> (c==1 && d==0 && s<number_of_steps) ? GRID_CD_1_0 LBM_STEP(x, y, z, s)
+    -> (c==1 && d==0 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
+
+READ GRID_CD_2_0 <- (c==2 && d==0 && s>0) ? GRID_CD_2_0 LBM_STEP(x, y, z, s-1)
+    <- (c==2 && d==0 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
+    <- (!(c==2 && d==0)) ? NEW
+    -> (c==2 && d==0 && s<number_of_steps) ? GRID_CD_2_0 LBM_STEP(x, y, z, s)
+    -> (c==2 && d==0 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
+
+READ GRID_CD_0_1 <- (c==0 && d==1 && s>0) ? GRID_CD_0_1 LBM_STEP(x, y, z, s-1)
+    <- (c==0 && d==1 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
+    <- (!(c==0 && d==1)) ? NEW
+    -> (c==0 && d==1 && s<number_of_steps) ? GRID_CD_0_1 LBM_STEP(x, y, z, s)
+    -> (c==0 && d==1 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
+
+READ GRID_CD_1_1 <- (c==1 && d==1 && s>0) ? GRID_CD_1_1 LBM_STEP(x, y, z, s-1)
+    <- (c==1 && d==1 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
+    <- (!(c==1 && d==1)) ? NEW
+    -> (c==1 && d==1 && s<number_of_steps) ? GRID_CD_1_1 LBM_STEP(x, y, z, s)
+    -> (c==1 && d==1 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
+
+READ GRID_CD_2_1 <- (c==2 && d==1 && s>0) ? GRID_CD_2_1 LBM_STEP(x, y, z, s-1)
+    <- (c==2 && d==1 && s==0) ? INITIAL_GRID FillGrid(x, y, z, c, d)
+    <- (!(c==2 && d==1)) ? NEW
+    -> (c==2 && d==1 && s<number_of_steps) ? GRID_CD_2_1 LBM_STEP(x, y, z, s)
+    -> (c==2 && d==1 && s==number_of_steps) ? descGridDC(x, y, z, c, d)
 
 BODY [type=CUDA]
-/*
-    double *grid = GRID;
+    double *grid = GRID_CD_0_0;
 
-    printf("[Process %d] kernel LBM (%d, %d, %d) is called (subgrid=%p)\n", rank, x, y, z, grid);
-*/
+    printf("[Process %d] kernel LBM_SUBGRID (%d %d %d %d %d %d)\n", rank, x, y, z, c, d, s);
 END
 
 
@@ -295,13 +325,30 @@ s = 0 .. number_of_steps-1
 : descGridDC(x, y, z, 0, 0)
 
 RW GRID_CD_0_0 <- GRID_CD_0_0 LBM_SUBGRID(x, y, z, 0, 0, s)
-    -> (s<number_of_steps-1) ? GRID_CD_0_0 LBM_SUBGRID(x, y, z, 0, 0, s+1) : descGridDC(x, y, z, 0, 0)
+    -> GRID_CD_0_0 LBM_SUBGRID(x, y, z, 0, 0, s+1)
+
+RW GRID_CD_1_0 <- GRID_CD_1_0 LBM_SUBGRID(x, y, z, 1, 0, s)
+    -> GRID_CD_1_0 LBM_SUBGRID(x, y, z, 1, 0, s+1)
+
+RW GRID_CD_2_0 <- GRID_CD_2_0 LBM_SUBGRID(x, y, z, 2, 0, s)
+    -> GRID_CD_2_0 LBM_SUBGRID(x, y, z, 2, 0, s+1)
+
+RW GRID_CD_0_1 <- GRID_CD_0_1 LBM_SUBGRID(x, y, z, 0, 1, s)
+    -> GRID_CD_0_1 LBM_SUBGRID(x, y, z, 0, 1, s+1)
+
+RW GRID_CD_1_1 <- GRID_CD_1_1 LBM_SUBGRID(x, y, z, 1, 1, s)
+    -> GRID_CD_1_1 LBM_SUBGRID(x, y, z, 1, 1, s+1)
+
+RW GRID_CD_2_1 <- GRID_CD_2_1 LBM_SUBGRID(x, y, z, 2, 1, s)
+    -> GRID_CD_2_1 LBM_SUBGRID(x, y, z, 2, 1, s+1)
+
+
 
 BODY [type=CUDA]
     double *subgrid[PROBLEM_C][PROBLEM_D];
     subgrid[0][0] = GRID_CD_0_0;
 
-    printf("[Process %d] kernel LBM (%d, %d, %d) is called (subgrid=%p)\n", rank, x, y, z, &subgrid[0][0]);
+    printf("[Process %d] kernel LBM_STEP (%d %d %d %d)\n", rank, x, y, z, s);
 END
 
 extern "C" %{
