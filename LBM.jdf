@@ -249,7 +249,6 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, 0)
 
 BODY
-/*
     double *grid = INITIAL_GRID;
 
     for(int i=0;i<TILE_SIZE_X*TILE_SIZE_Y*TILE_SIZE_Z;++i)
@@ -257,8 +256,7 @@ BODY
         grid[i] = 1;
     }
 
-    printf("FillGrid: %d %d %d %d %d\n", x, y, z, c, d);
-*/
+    printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
 END
 
 
@@ -271,30 +269,40 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
-RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s)
+RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
 
-RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s)
+RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
 
-RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s)
+RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
 
-RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s)
+RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
 
-RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s)
+RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
 
-RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s)
+RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s-1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
 
+/*
+CTL X <- (s>0) ? X LBM_STEP(x, y, z, s-1)
+    -> (s<==>number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
+*/
 
 BODY [type=CUDA]
     double *subgrid[PROBLEM_C][PROBLEM_D];
     subgrid[0][0] = GRID_CD_0_0;
+    subgrid[1][0] = GRID_CD_1_0;
+    subgrid[2][0] = GRID_CD_2_0;
+    subgrid[0][1] = GRID_CD_0_1;
+    subgrid[1][1] = GRID_CD_1_1;
+    subgrid[2][1] = GRID_CD_2_1;
 
-    printf("[Process %d] kernel LBM_STEP (%d %d %d %d)\n", rank, x, y, z, s);
+    printf("[Process %d] kernel LBM_STEP (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
+                rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 END
 
 
@@ -354,7 +362,6 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 2;
 
     parsec = parsec_init(-1, &argc, &argv);
 
