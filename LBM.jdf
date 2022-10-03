@@ -62,6 +62,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 
 // HPC defines
 
+#define DIMENSIONS_NUMBER 3
+
+
 #define MAX_SUBGRIDS 256
 
 #define PROBLEM_SIZE_X (64)
@@ -76,6 +79,10 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 #define TILE_SIZE_X (64)
 #define TILE_SIZE_Y (64)
 #define TILE_SIZE_Z (64)
+
+#define OVERLAP_X (1)
+#define OVERLAP_Y (2)
+#define OVERLAP_Z (3)
 
 #define SUBGRID_NUMBER_X ((PROBLEM_SIZE_X)/(TILE_SIZE_X))
 #define SUBGRID_NUMBER_Y ((PROBLEM_SIZE_Y)/(TILE_SIZE_Y))
@@ -226,6 +233,9 @@ tile_size_y   [ type="int" ]
 tile_size_z   [ type="int" ]
 conservatives_number   [ type="int" ]
 directions_number   [ type="int" ]
+overlap_x   [ type="int" ]
+overlap_y   [ type="int" ]
+overlap_z   [ type="int" ]
 number_of_steps   [ type="int" ]
 CuHI              [type = "parsec_info_id_t"]
 
@@ -269,28 +279,27 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
-RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_CD_0_0 Exchange(x, y, z, s-1, 0, 0, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_0_0 Exchange(x, y, z, s, 0, 0, 0, 0)
 
-RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_CD_1_0 Exchange(x, y, z, s-1, 1, 0, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_1_0 Exchange(x, y, z, s, 1, 0, 0, 0)
 
-RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_CD_2_0 Exchange(x, y, z, s-1, 2, 0, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_2_0 Exchange(x, y, z, s, 2, 0, 0, 0)
 
-RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_CD_0_1 Exchange(x, y, z, s-1, 0, 1, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_0_1 Exchange(x, y, z, s, 0, 1, 0, 0)
 
-RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_CD_1_1 Exchange(x, y, z, s-1, 1, 1, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_1_1 Exchange(x, y, z, s, 1, 1, 0, 0)
 
-RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s-1)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
+RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_CD_2_1 Exchange(x, y, z, s-1, 2, 1, 0, 0)
+    -> (s==number_of_steps-1) ? GRID_CD_2_1 Exchange(x, y, z, s, 2, 1, 0, 0)
 
-/*
-CTL X <- (s>0) ? X LBM_STEP(x, y, z, s-1)
-    -> (s<==>number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
-*/
+CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
+    -> (s!=number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
+
 
 BODY [type=CUDA]
     double *subgrid[PROBLEM_C][PROBLEM_D];
@@ -305,6 +314,49 @@ BODY [type=CUDA]
                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 END
 
+
+
+Exchange(x, y, z, s, conservative, direction, dimension, side)
+
+x = 0 .. subgrid_number_x-1
+y = 0 .. subgrid_number_y-1
+z = 0 .. subgrid_number_z-1
+s = 0 .. number_of_steps-1
+conservative = 0 .. conservatives_number-1
+direction = 0 .. directions_number-1
+dimension = 0 .. 3-1
+//side = 0 .. 1
+side = %{ return conservative; %}
+
+// name of the paper : Extending the PTG paradigm to run efficient high-order stencil codes
+
+: descGridDC(x, y, z, conservative, direction)
+
+//READ GRID_FROM <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
+
+RW GRID_CD_0_0 <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
+
+RW GRID_CD_1_0 <- GRID_CD_1_0 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
+
+RW GRID_CD_2_0 <- GRID_CD_2_0 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
+
+RW GRID_CD_0_1 <- GRID_CD_0_1 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
+
+RW GRID_CD_1_1 <- GRID_CD_1_1 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
+
+RW GRID_CD_2_1 <- GRID_CD_2_1 LBM_STEP(x, y, z, s)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
+
+
+BODY [type=CUDA]
+    printf("[Process %d] kernel LBM_STEP (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
+                rank, x, y, z, s, GRID_CD_0_0, GRID_CD_1_0, GRID_CD_2_0, GRID_CD_0_1, GRID_CD_1_1, GRID_CD_2_1);
+END
 
 WriteBack(x, y, z, c, d)
 
@@ -384,6 +436,7 @@ int main(int argc, char *argv[])
                                5,
                                SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z, PROBLEM_C, PROBLEM_D,
                                TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, 1, 1,
+                               OVERLAP_X, OVERLAP_Y, OVERLAP_Z,
                                1, 1, 1, 1, 1)
                             );
 
@@ -396,6 +449,7 @@ int main(int argc, char *argv[])
                                 rank, world,
                                 SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z,
                                 TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, PROBLEM_C, PROBLEM_D,
+                                OVERLAP_X, OVERLAP_Y, OVERLAP_Z,
                                 number_of_steps,
                                 CuHI);
 
