@@ -279,22 +279,22 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
-RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 0, 0)
+RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s, 0, 0, 0, 0)
 
-RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s-1, 1, 0, 0, 0)
+RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s-1, 1, 0, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s, 1, 0, 0, 0)
 
-RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s-1, 2, 0, 0, 0)
+RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s-1, 2, 0, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s, 2, 0, 0, 0)
 
-RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s-1, 0, 1, 0, 0)
+RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s-1, 0, 1, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s, 0, 1, 0, 0)
 
-RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s-1, 1, 1, 0, 0)
+RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s-1, 1, 1, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s, 1, 1, 0, 0)
 
-RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 0, 0)
+RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s, 2, 1, 0, 0)
 
 CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
@@ -334,19 +334,47 @@ side = 0 .. 1
 
 //READ GRID_FROM <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
 
-RW GRID_TO <- (conservative==0 && direction==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
-    <- (conservative==1 && direction==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, s)
-    <- (conservative==2 && direction==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, s)
-    <- (conservative==0 && direction==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s)
-    <- (conservative==1 && direction==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s)
-    <- (conservative==2 && direction==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s)
 
-    -> (conservative==0 && direction==0 && s!=number_of_steps-1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
-    -> (conservative==1 && direction==0 && s!=number_of_steps-1) ? GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
-    -> (conservative==2 && direction==0 && s!=number_of_steps-1) ? GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
-    -> (conservative==0 && direction==1 && s!=number_of_steps-1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
-    -> (conservative==1 && direction==1 && s!=number_of_steps-1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
-    -> (conservative==2 && direction==1 && s!=number_of_steps-1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
+
+/*
+<- (conservative==0 && direction==0)
+        ? ((dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
+        : GRID_TO Exchange(x, y, z, conservative, direction, (side==0)?
+        (dimension-1):(dimension), (side+1)%2))
+*/
+
+/*
+    -> (conservative==0 && direction==0)
+        ? (((dimension==2 && side==1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1))
+        : (GRID_TO Exchange(x, y, z, conservative, direction, (side==1)?(dimension+1):(dimension), (side+1)%2)))
+*/
+
+RW GRID_TO
+    <- (conservative==0 && direction==0 && dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
+    <- (conservative==0 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+    <- (conservative==1 && direction==0 && dimension==0 && side==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, s)
+    <- (conservative==1 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+    <- (conservative==2 && direction==0 && dimension==0 && side==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, s)
+    <- (conservative==2 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+    <- (conservative==0 && direction==1 && dimension==0 && side==0) ? GRID_CD_0_1 LBM_STEP(x, y, z, s)
+    <- (conservative==0 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+    <- (conservative==1 && direction==1 && dimension==0 && side==0) ? GRID_CD_1_1 LBM_STEP(x, y, z, s)
+    <- (conservative==1 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+    <- (conservative==2 && direction==1 && dimension==0 && side==0) ? GRID_CD_2_1 LBM_STEP(x, y, z, s)
+    <- (conservative==2 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
+
+    -> (conservative==0 && direction==0 && dimension==2 && side==1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==0 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+    -> (conservative==1 && direction==0 && dimension==2 && side==1) ? GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==1 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+    -> (conservative==2 && direction==0 && dimension==2 && side==1) ? GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==2 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+    -> (conservative==0 && direction==1 && dimension==2 && side==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==0 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+    -> (conservative==1 && direction==1 && dimension==2 && side==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==1 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+    -> (conservative==2 && direction==1 && dimension==2 && side==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==2 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
 
 
 BODY [type=CUDA]
@@ -410,6 +438,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
+    number_of_steps = 3;
 
     parsec = parsec_init(-1, &argc, &argv);
 
