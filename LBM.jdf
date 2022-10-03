@@ -279,23 +279,23 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
-RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_CD_0_0 Exchange(x, y, z, s-1, 0, 0, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_0_0 Exchange(x, y, z, s, 0, 0, 0, 0)
+RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s, 0, 0, 0, 0)
 
-RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_CD_1_0 Exchange(x, y, z, s-1, 1, 0, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_1_0 Exchange(x, y, z, s, 1, 0, 0, 0)
+RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s-1, 1, 0, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s, 1, 0, 0, 0)
 
-RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_CD_2_0 Exchange(x, y, z, s-1, 2, 0, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_2_0 Exchange(x, y, z, s, 2, 0, 0, 0)
+RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s-1, 2, 0, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s, 2, 0, 0, 0)
 
-RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_CD_0_1 Exchange(x, y, z, s-1, 0, 1, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_0_1 Exchange(x, y, z, s, 0, 1, 0, 0)
+RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s-1, 0, 1, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s, 0, 1, 0, 0)
 
-RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_CD_1_1 Exchange(x, y, z, s-1, 1, 1, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_1_1 Exchange(x, y, z, s, 1, 1, 0, 0)
+RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s-1, 1, 1, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s, 1, 1, 0, 0)
 
-RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_CD_2_1 Exchange(x, y, z, s-1, 2, 1, 0, 0)
-    -> (s==number_of_steps-1) ? GRID_CD_2_1 Exchange(x, y, z, s, 2, 1, 0, 0)
+RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s, 2, 1, 0, 0)
 
 CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
     -> (s!=number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
@@ -321,12 +321,12 @@ Exchange(x, y, z, s, conservative, direction, dimension, side)
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 z = 0 .. subgrid_number_z-1
-s = 0 .. number_of_steps-1
+s = 0 .. number_of_steps-2
 conservative = 0 .. conservatives_number-1
 direction = 0 .. directions_number-1
 dimension = 0 .. 3-1
-//side = 0 .. 1
-side = %{ return conservative; %}
+side = 0 .. 1
+//side = %{ return conservative; %}
 
 // name of the paper : Extending the PTG paradigm to run efficient high-order stencil codes
 
@@ -334,28 +334,24 @@ side = %{ return conservative; %}
 
 //READ GRID_FROM <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
 
-RW GRID_CD_0_0 <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
+RW GRID_TO <- (conservative==0 && direction==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
+    <- (conservative==1 && direction==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, s)
+    <- (conservative==2 && direction==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, s)
+    <- (conservative==0 && direction==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s)
+    <- (conservative==1 && direction==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s)
+    <- (conservative==2 && direction==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s)
 
-RW GRID_CD_1_0 <- GRID_CD_1_0 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
-
-RW GRID_CD_2_0 <- GRID_CD_2_0 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
-
-RW GRID_CD_0_1 <- GRID_CD_0_1 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
-
-RW GRID_CD_1_1 <- GRID_CD_1_1 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
-
-RW GRID_CD_2_1 <- GRID_CD_2_1 LBM_STEP(x, y, z, s)
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==0 && direction==0 && s!=number_of_steps-1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==1 && direction==0 && s!=number_of_steps-1) ? GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==2 && direction==0 && s!=number_of_steps-1) ? GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
+    -> (conservative==0 && direction==1 && s!=number_of_steps-1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==1 && direction==1 && s!=number_of_steps-1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
+    -> (conservative==2 && direction==1 && s!=number_of_steps-1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
 
 
 BODY [type=CUDA]
-    printf("[Process %d] kernel LBM_STEP (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
-                rank, x, y, z, s, GRID_CD_0_0, GRID_CD_1_0, GRID_CD_2_0, GRID_CD_0_1, GRID_CD_1_1, GRID_CD_2_1);
+    printf("[Process %d] kernel Exchange (%d %d %d %d %d %d %d %d) grid_to=%p\n",
+                rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
 END
 
 WriteBack(x, y, z, c, d)
