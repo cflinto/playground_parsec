@@ -77,9 +77,10 @@ typedef struct Grid
 {
 	int size[3];
 	int subspaces[3];
-	int subgridLogicSizeCompressed[3];
-	int subgridLogicSize[3];
-	int subgridTrueSize[3];
+	int subgridLogicalSizeCompressed[3];
+	int subgridOwnedSize[3]; // cells owned uniquely by this subgrid
+	int subgridLogicalSize[3]; // cells that need computation on this subgrid (includes cells that share the same computation)
+	int subgridTrueSize[3]; // all the cells of the subgrid (including ghost cells = halo = overlap)
 	size_t subgridCompressedSize[MAX_SUBGRIDS];
 	size_t subgridTempSize[MAX_SUBGRIDS];
 	int cellsPerSubgrid;
@@ -103,9 +104,12 @@ Grid newGrid(int rank, int nodes)
 	grid.subspaces[0] = 2;
 	grid.subspaces[1] = 2;
 	grid.subspaces[2] = 2;
-	grid.subgridLogicSize[0] = PROBLEM_SIZE_X / grid.subspaces[0] + 1;
-	grid.subgridLogicSize[1] = PROBLEM_SIZE_Y / grid.subspaces[1] + 1;
-	grid.subgridLogicSize[2] = PROBLEM_SIZE_Z / grid.subspaces[2] + 1;
+	grid.subgridOwnedSize[0] = PROBLEM_SIZE_X / grid.subspaces[0];
+	grid.subgridOwnedSize[1] = PROBLEM_SIZE_Y / grid.subspaces[1];
+	grid.subgridOwnedSize[2] = PROBLEM_SIZE_Z / grid.subspaces[2];
+	grid.subgridLogicalSize[0] = grid.subgridOwnedSize[0] + 1;
+	grid.subgridLogicalSize[1] = grid.subgridOwnedSize[1] + 1;
+	grid.subgridLogicalSize[2] = grid.subgridOwnedSize[2] + 1;
 	grid.overlap = 1;
 
 	grid.currentSubgrid = 0;
@@ -117,14 +121,23 @@ Grid newGrid(int rank, int nodes)
 	grid.physicalSize[1] = 2;
 	grid.physicalSize[2] = 2;
 
-	grid.subgridLogicSizeCompressed[0] = grid.subgridLogicSize[0];
-	grid.subgridLogicSizeCompressed[1] = grid.subgridLogicSize[1];
-	grid.subgridLogicSizeCompressed[2] = grid.subgridLogicSize[2];
-	grid.subgridTrueSize[0] = grid.subgridLogicSize[0] + 2 * grid.overlap;
-	grid.subgridTrueSize[1] = grid.subgridLogicSize[1] + 2 * grid.overlap;
-	grid.subgridTrueSize[2] = grid.subgridLogicSize[2] + 2 * grid.overlap;
+	grid.subgridLogicalSizeCompressed[0] = grid.subgridLogicalSize[0];
+	grid.subgridLogicalSizeCompressed[1] = grid.subgridLogicalSize[1];
+	grid.subgridLogicalSizeCompressed[2] = grid.subgridLogicalSize[2];
+	grid.subgridTrueSize[0] = grid.subgridLogicalSize[0] + 2 * grid.overlap;
+	grid.subgridTrueSize[1] = grid.subgridLogicalSize[1] + 2 * grid.overlap;
+	grid.subgridTrueSize[2] = grid.subgridLogicalSize[2] + 2 * grid.overlap;
 	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]) * (grid.subgridTrueSize[2]);
 	grid.subgridsNumber = grid.subspaces[0] * grid.subspaces[1] * grid.subspaces[2];
+
+    int numberOfSharedLayers = 1; // TODO !
+    for(int d=0;d<DIMENSIONS_NUMBER;++d)
+    {
+        assert(grid.size[d] % grid.subgridOwnedSize[d] == 0);
+        assert(grid.subspaces[d]*grid.subgridOwnedSize[d] == grid.size[d]);
+        assert(grid.subgridOwnedSize[d] <= grid.subgridLogicalSize[d]);
+        assert(grid.subgridLogicalSize[d] <= grid.subgridTrueSize[d]);
+    }
 
 	for (int i = 0; i < grid.subgridsNumber; ++i)
 	{
@@ -141,10 +154,9 @@ Grid newGrid(int rank, int nodes)
         parsec_multidimensional_grid_init(&grid.desc[i],
                                PARSEC_MATRIX_DOUBLE,
                                nodes, rank,
-                               5,
-                               SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z, PROBLEM_C, PROBLEM_D,
-                               TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, 1, 1,
-                               OVERLAP_X, OVERLAP_Y, OVERLAP_Z,
+                               5, 3,
+                               grid.subspaces[0], grid.subspaces[1], grid.subspaces[2], PROBLEM_C, PROBLEM_D,
+                               grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[2],
                                1, 1, 1, 1, 1);
         grid.desc[i].grid = parsec_data_allocate((size_t)grid.desc[i].nb_local_tiles *
                                         (size_t)grid.desc[i].bsiz *
@@ -210,6 +222,7 @@ static void destroy_cublas_handle(void *_h, void *_n)
 
 
 descGridDC  [ type="parsec_multidimensional_grid_t*" ]
+gridParameters       [ type="Grid" ]
 
 
 rank   [ type="int" ]
@@ -448,7 +461,7 @@ int main(int argc, char *argv[])
                                  TILE_SIZE_X, TILE_SIZE_Y*TILE_SIZE_Z*PROBLEM_C*PROBLEM_D, TILE_SIZE_X);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
-                                grid.desc,
+                                grid.desc, grid,
                                 rank, world,
                                 SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z,
                                 TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, PROBLEM_C, PROBLEM_D,
