@@ -28,21 +28,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 	}
 }
 
-/* Paste code to allocate a matrix in desc if cond_init is true */
-#define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)                                     \
-    TYPE##_t *DC = (TYPE##_t*)malloc(sizeof(TYPE##_t)*PROBLEM_DC);                                                                        \
-    if(COND) {                                                                                      \
-        for(int i=0;i<PROBLEM_DC;++i)                                                               \
-        {                                                                                           \
-            TYPE##_init INIT_PARAMS;                                                                \
-            DC[i].grid = parsec_data_allocate((size_t)DC[i].nb_local_tiles *                              \
-                                            (size_t)DC[i].bsiz *                                       \
-                                            (size_t)parsec_datadist_getsizeoftype(DC[i].mtype));       \
-            assert(DC[i].grid != NULL);                                                                \
-            parsec_data_collection_set_key((parsec_data_collection_t*)&DC[i], #DC);                    \
-        }                                                                                           \
-    }
-
 #include <math.h>
 #include "parsec.h"
 #include "parsec/data_dist/matrix/matrix.h"
@@ -99,16 +84,16 @@ typedef struct Grid
 	size_t subgridTempSize[MAX_SUBGRIDS];
 	int cellsPerSubgrid;
 	int subgridsNumber;
-	double **subgridsCPU;
-	double **subgrids[2];
 	int currentSubgrid;
 	int overlap;
 	double mass[MAX_SUBGRIDS];
 	double physicalMinCoords[3];
 	double physicalSize[3];
+
+    parsec_multidimensional_grid_t *desc;
 } Grid;
 
-Grid newGrid(void)
+Grid newGrid(int rank, int nodes)
 {
 	Grid grid;
 
@@ -141,28 +126,32 @@ Grid newGrid(void)
 	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]) * (grid.subgridTrueSize[2]);
 	grid.subgridsNumber = grid.subspaces[0] * grid.subspaces[1] * grid.subspaces[2];
 
-	grid.subgridsCPU = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
-	grid.subgrids[0] = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
-	grid.subgrids[1] = (double **)malloc(sizeof(double *) * grid.subgridsNumber);
-
 	for (int i = 0; i < grid.subgridsNumber; ++i)
 	{
 		// init to a random value
 		grid.subgridCompressedSize[i] = 0;
 		grid.subgridTempSize[i] = 0;
-
-		// malloc the subgrids on the CPU
-		grid.subgridsCPU[i] = (double *)malloc(grid.cellsPerSubgrid * sizeof(double));
-
-		//gpuErrchk(cudaMalloc(&grid.subgrids[0][i], grid.cellsPerSubgrid * sizeof(double)));
-		//gpuErrchk(cudaMalloc(&grid.subgrids[1][i], grid.cellsPerSubgrid * sizeof(double)));
-
-		// fill with zeros
-		for (int j = 0; j < grid.cellsPerSubgrid; ++j)
-		{
-			grid.subgridsCPU[i][j] = 0;
-		}
 	}
+
+    grid.desc = (parsec_multidimensional_grid_t*)malloc(sizeof(parsec_multidimensional_grid_t)*PROBLEM_DC);
+    assert(grid.desc != NULL);
+
+    for(int i=0;i<PROBLEM_DC;++i)
+    {
+        parsec_multidimensional_grid_init(&grid.desc[i],
+                               PARSEC_MATRIX_DOUBLE,
+                               nodes, rank,
+                               5,
+                               SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z, PROBLEM_C, PROBLEM_D,
+                               TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, 1, 1,
+                               OVERLAP_X, OVERLAP_Y, OVERLAP_Z,
+                               1, 1, 1, 1, 1);
+        grid.desc[i].grid = parsec_data_allocate((size_t)grid.desc[i].nb_local_tiles *
+                                        (size_t)grid.desc[i].bsiz *
+                                        (size_t)parsec_datadist_getsizeoftype(grid.desc[i].mtype));
+        assert(grid.desc[i].grid != NULL);
+        parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc[i], "grid.desc");
+    }
 
 	return grid;
 }
@@ -431,7 +420,7 @@ int main(int argc, char *argv[])
 #endif
 
     // LBM parameters
-    Grid grid = newGrid();
+    Grid grid = newGrid(rank, world);
 
     double delta_x = grid.physicalSize[0] / (double)grid.size[0];
     double dt = CFL * delta_x / (ALPHA > BETA ? ALPHA : BETA);
@@ -454,23 +443,12 @@ int main(int argc, char *argv[])
     int CuHI = -1;
 #endif
 
-    PASTE_CODE_ALLOCATE_MATRIX(descGridDC, true, parsec_multidimensional_grid, (
-                               &descGridDC[i],
-                               PARSEC_MATRIX_DOUBLE,
-                               nodes, rank,
-                               5,
-                               SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z, PROBLEM_C, PROBLEM_D,
-                               TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, 1, 1,
-                               OVERLAP_X, OVERLAP_Y, OVERLAP_Z,
-                               1, 1, 1, 1, 1)
-                            );
-
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
     parsec_add2arena_rect(&adt, otype,
                                  TILE_SIZE_X, TILE_SIZE_Y*TILE_SIZE_Z*PROBLEM_C*PROBLEM_D, TILE_SIZE_X);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
-                                descGridDC,
+                                grid.desc,
                                 rank, world,
                                 SUBGRID_NUMBER_X, SUBGRID_NUMBER_Y, SUBGRID_NUMBER_Z,
                                 TILE_SIZE_X, TILE_SIZE_Y, TILE_SIZE_Z, PROBLEM_C, PROBLEM_D,
@@ -489,15 +467,15 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
-printf("final : %f\n", ((double*)(descGridDC[0].grid))[0]);
+printf("final : %f\n", ((double*)(grid.desc[0].grid))[0]);
 
 
     parsec_taskpool_free(&tp->super);
 
     for(int i=0;i<PROBLEM_DC;++i)
     {
-        parsec_data_free(descGridDC[i].grid);
-        parsec_grid_destroy(&descGridDC[i]);
+        parsec_data_free(grid.desc[i].grid);
+        parsec_grid_destroy(&grid.desc[i]);
     }
 
     parsec_fini(&parsec);
