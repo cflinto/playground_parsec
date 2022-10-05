@@ -365,20 +365,6 @@ side = 0 .. 1
 //READ GRID_FROM <- GRID_CD_0_0 LBM_STEP(x, y, z, s)
 
 
-
-/*
-<- (conservative==0 && direction==0)
-        ? ((dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
-        : GRID_TO Exchange(x, y, z, conservative, direction, (side==0)?
-        (dimension-1):(dimension), (side+1)%2))
-*/
-
-/*
-    -> (conservative==0 && direction==0)
-        ? (((dimension==2 && side==1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1))
-        : (GRID_TO Exchange(x, y, z, conservative, direction, (side==1)?(dimension+1):(dimension), (side+1)%2)))
-*/
-
 RW GRID_TO
     <- (conservative==0 && direction==0 && dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
     <- (conservative==0 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
