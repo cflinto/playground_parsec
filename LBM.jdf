@@ -245,6 +245,7 @@ static void destroy_cublas_handle(void *_h, void *_n)
     (void)_h;
 }
 
+int cd;
 
 %}
 
@@ -408,12 +409,15 @@ d = 0 .. directions_number-1
 
 : descGridDC(x, y, z, c, d)
 
-RW FINAL_GRID <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, number_of_steps-1)
+/*
+RW FINAL_GRID[p] [p=0..3] <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, number_of_steps-1)
     <- (c==1 && d==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, number_of_steps-1)
     <- (c==2 && d==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, number_of_steps-1)
     <- (c==0 && d==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, number_of_steps-1)
     <- (c==1 && d==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, number_of_steps-1)
     <- (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, number_of_steps-1)
+*/
+RW FINAL_GRID[cd] [cd=0..3] <- (c==0 && d==0) ? GRID_CD_0_0[cd] LBM_STEP(x, y, z, number_of_steps-1)
 
     -> descGridDC(x, y, z, c, d)
 
