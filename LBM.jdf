@@ -315,9 +315,26 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
+/*
+RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
+    <- [p=0..3] X TASK(n, p)
+*/
+/*
 RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/directions_number)
         : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/directions_number, 2, 1)
+*/
+
+
+
+ //       : GRID_TO Exchange(x, y, z, s-1, %{ return cd%conservatives_number; %}, cd/directions_number, 2, 1)
+
+
+
+RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
+    <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/directions_number)
+        : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/directions_number, 2, 1)
+
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/directions_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/directions_number, 0, 0)
 
@@ -346,12 +363,14 @@ CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
 
 BODY [type=CUDA]
     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+    /*
     subgrid[0][0] = GRID_CD[0];
     subgrid[1][0] = GRID_CD[1];
     subgrid[2][0] = GRID_CD[2];
     subgrid[0][1] = GRID_CD[3];
     subgrid[1][1] = GRID_CD[4];
     subgrid[2][1] = GRID_CD[5];
+*/
 
     printf("[Process %d] kernel LBM_STEP (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
@@ -381,6 +400,7 @@ RW GRID_TO <- (dimension==0 && side==0) ? GRID_CD[conservative+direction*gridPar
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
         -> (dimension==2 && side==1) ? GRID_CD[conservative+direction*gridParameters.conservativesNumber] LBM_STEP(x, y, z, s+1)
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
+
 /*
     <- (conservative==0 && direction==0 && dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
     <- (conservative==0 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
