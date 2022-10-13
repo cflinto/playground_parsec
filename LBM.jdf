@@ -295,7 +295,7 @@ RW INITIAL_GRID[cd] [cd=0..conservatives_number*directions_number-1] <- descGrid
     -> GRID_CD[cd] LBM_STEP(x, y, z, 0)
 
 BODY
-    double *grid = INITIAL_GRID;
+    double *grid = INITIAL_GRID[cd];
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
@@ -338,6 +338,10 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/directions_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/directions_number, 0, 0)
 
+CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
+    <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
+    -> (s<number_of_steps-1) ? TEST_CTL[cd] LBM_STEP(x, y, z, s+1)
+
 /*
 RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s, 0, 0, 0, 0)
@@ -363,16 +367,29 @@ CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
 
 BODY [type=CUDA]
     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
-    /*
     subgrid[0][0] = GRID_CD[0];
     subgrid[1][0] = GRID_CD[1];
     subgrid[2][0] = GRID_CD[2];
     subgrid[0][1] = GRID_CD[3];
     subgrid[1][1] = GRID_CD[4];
     subgrid[2][1] = GRID_CD[5];
-*/
 
-    printf("[Process %d] kernel LBM_STEP (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
+
+    printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
+                rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
+END
+
+BODY
+    double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+    subgrid[0][0] = GRID_CD[0];
+    subgrid[1][0] = GRID_CD[1];
+    subgrid[2][0] = GRID_CD[2];
+    subgrid[0][1] = GRID_CD[3];
+    subgrid[1][1] = GRID_CD[4];
+    subgrid[2][1] = GRID_CD[5];
+
+
+    printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 END
 
