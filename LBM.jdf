@@ -291,11 +291,21 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, 0)
 */
 
+RW TEST_PARAMETRIZED_FLOW[cd] [cd=0..conservatives_number*directions_number-1]
+    <- descGridDC(x, y, z,cd%conservatives_number, cd/conservatives_number)
+
 RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> GRID_CD[cd] LBM_STEP(x, y, z, 0)
 
 BODY
     double *grid = INITIAL_GRID;
+
+    double *test_subgrid_0 = TEST_PARAMETRIZED_FLOW[0];
+    double *test_subgrid_1 = TEST_PARAMETRIZED_FLOW[1];
+    double *test_subgrid_2 = TEST_PARAMETRIZED_FLOW[2];
+    double *test_subgrid_3 = TEST_PARAMETRIZED_FLOW[3];
+    double *test_subgrid_4 = TEST_PARAMETRIZED_FLOW[4];
+    double *test_subgrid_5 = TEST_PARAMETRIZED_FLOW[5];
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
@@ -303,7 +313,8 @@ BODY
     }
 
     //printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
-    printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
+    printf("FillGrid: %d %d %d %d %d (grid=%p)   (test_subgrid_0=%p, test_subgrid_1=%p, test_subgrid_2=%p, test_subgrid_3=%p, test_subgrid_4=%p, test_subgrid_5=%p)\n",
+            x, y, z, c, d, grid, test_subgrid_0, test_subgrid_1, test_subgrid_2, test_subgrid_3, test_subgrid_4, test_subgrid_5);
 END
 
 
