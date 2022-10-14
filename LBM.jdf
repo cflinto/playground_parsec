@@ -350,9 +350,9 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
     -> (s==number_of_steps-1) ? FINAL_GRID[cd] WriteBack(x, y, z, cd%conservatives_number, cd/directions_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/directions_number, 0, 0)
 
-CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
-    <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
-    -> (s<number_of_steps-1) ? TEST_CTL[cd] LBM_STEP(x, y, z, s+1)
+// CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
+//     <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
+//     -> (s<number_of_steps-1) ? TEST_CTL[cd] LBM_STEP(x, y, z, s+1)
 
 /*
 RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
