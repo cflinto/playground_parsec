@@ -291,17 +291,18 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, 0)
 */
 
-RW INITIAL_GRID[cd] [cd=0..conservatives_number*directions_number-1] <- descGridDC(x, y, z, c, d)
+RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> GRID_CD[cd] LBM_STEP(x, y, z, 0)
 
 BODY
-    double *grid = INITIAL_GRID[cd];
+    double *grid = INITIAL_GRID;
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
         grid[i] = 1;
     }
 
+    //printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
     printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
 END
 
@@ -373,7 +374,6 @@ BODY [type=CUDA]
     subgrid[0][1] = GRID_CD[3];
     subgrid[1][1] = GRID_CD[4];
     subgrid[2][1] = GRID_CD[5];
-
 
     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
