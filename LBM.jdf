@@ -295,7 +295,7 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
 //     <- descGridDC(x, y, z,cd%conservatives_number, cd/conservatives_number)
 
 RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
-    -> GRID_CD[cd] LBM_STEP(x, y, z, 0)
+    -> GRID_CD[c+d*conservatives_number] LBM_STEP(x, y, z, 0)
 
 BODY
     double *grid = INITIAL_GRID;
