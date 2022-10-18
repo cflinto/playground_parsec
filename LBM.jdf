@@ -297,6 +297,8 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
 RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
     -> GRID_CD[c+d*conservatives_number] LBM_STEP(x, y, z, 0)
 
+CTL TEST_BROADCAST -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST LBM_STEP(x, y, z_iterator, 0)
+
 BODY
     double *grid = INITIAL_GRID;
 
@@ -341,7 +343,8 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
 
  //       : GRID_TO Exchange(x, y, z, s-1, %{ return cd%conservatives_number; %}, cd/directions_number, 2, 1)
 
-
+// do a dump_task_class
+// + asseerts ...
 
 RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/directions_number)
@@ -349,6 +352,8 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
 
     -> (s==number_of_steps-1) ? FINAL_GRID[cd] WriteBack(x, y, z, cd%conservatives_number, cd/directions_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/directions_number, 0, 0)
+
+CTL TEST_BROADCAST <- TEST_BROADCAST FillGrid(x, y, 0, 0, 0)
 
 // CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
 //     <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
