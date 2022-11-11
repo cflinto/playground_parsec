@@ -321,7 +321,7 @@ BODY
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
         grid[i] = c+d*conservatives_number;
-        grid[i] = 42;
+        grid[i] = 0;
     }
 
     printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
@@ -412,9 +412,6 @@ RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
 //     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
 //                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 
-//     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
-//                 rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
-
 //     /*for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
 //     {
 //         for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
@@ -440,6 +437,15 @@ BODY
 
     printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
                 rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+
+    for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+    {
+        for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
+        {
+            double *mat = GRID_CD[cd];
+            mat[i] += 1;
+        }
+    }
 
 END
 
@@ -563,9 +569,9 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 1;
+    number_of_steps = 16;
 
-    parsec = parsec_init(1, &argc, &argv);
+    parsec = parsec_init(-1, &argc, &argv);
 
     int nodes = world;
 
