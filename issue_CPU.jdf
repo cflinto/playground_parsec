@@ -1,0 +1,151 @@
+extern "C" %{
+
+/**
+ * This second example shows how to create a simple jdf that has only one single task.
+ *    JDF syntax
+ *    parsec_JDFNAME_New()
+ *    parsec_context_add_taskpool()
+ *    parsec_data_collection_init()
+ *
+ * Can play with the HelloWorld bounds to show embarissingly parallel algorithm.
+ *
+ * @version 3.0
+ * @email parsec-users@icl.utk.edu
+ *
+ */
+
+/* Paste code to allocate a matrix in desc if cond_init is true */
+#define PASTE_CODE_ALLOCATE_MATRIX(DC, COND, TYPE, INIT_PARAMS)      \
+    TYPE##_t DC;                                                     \
+    if(COND) {                                                          \
+        TYPE##_init INIT_PARAMS;                                        \
+        DC.mat = parsec_data_allocate((size_t)DC.super.nb_local_tiles * \
+                                        (size_t)DC.super.bsiz *      \
+                                        (size_t)parsec_datadist_getsizeoftype(DC.super.mtype)); \
+        parsec_data_collection_set_key((parsec_data_collection_t*)&DC, #DC);          \
+    }
+
+#include <math.h>
+#include "parsec.h"
+#include "parsec/data_dist/matrix/matrix.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+
+
+#define MATRIX_M 32 // M rows
+#define MATRIX_N 32 // N columns
+#define MATRIX_K 64 // depth
+#define TILE_SIZE 64
+
+%}
+
+desc            [type = "parsec_matrix_block_cyclic_t*"]
+
+rank            [ type="int" ]
+nodes           [ type="int" ]
+matrix_size_m   [ type="int" ] // row number
+matrix_size_n   [ type="int" ] // column number
+matrix_size_k   [ type="int" ]
+
+
+FillA(m, n)
+
+m = 0 .. matrix_size_m-1
+n = 0 .. matrix_size_n-1
+
+: desc(0, 0)
+
+WRITE A -> A ReadA(m, n)
+
+BODY [type=CPU]
+    printf("[FillA(%d, %d)]\n", m, n);
+END
+
+ReadA(m, n)
+
+m = 0 .. matrix_size_m-1
+n = 0 .. matrix_size_n-1
+
+: desc(0, 0)
+
+READ A <- A FillA(m, n)
+
+BODY
+    printf("[ReadA(%d, %d)]\n", m, n);
+END
+
+extern "C" %{
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    int rc;
+    int rank, world;
+    parsec_issue_CPU_taskpool_t *tp;
+    //int mycounter;
+
+    parsec_arena_datatype_t adt;
+    parsec_datatype_t otype;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+    world = 1;
+    rank = 0;
+#endif
+
+    parsec = parsec_init(-1, &argc, &argv);
+
+    //mycounter = 300 + rank;
+
+    //parsec_matrix_block_cyclic_t *desc;
+
+    int KP=1, KQ=1;
+
+    PASTE_CODE_ALLOCATE_MATRIX(desc, true, parsec_matrix_block_cyclic, (
+                            &desc,
+                            PARSEC_MATRIX_DOUBLE,
+                            PARSEC_MATRIX_TILE,
+                            rank,
+                            TILE_SIZE,      TILE_SIZE,   /* Tile size */
+                            MATRIX_M*TILE_SIZE,    MATRIX_N*TILE_SIZE,   /* Global matrix size (what is stored)*/
+                            0,           0,    /* Staring point in the global matrix */
+                            MATRIX_M,    MATRIX_N,    /* Submatrix size (the one concerned by the computation */
+                            KP,          KQ,    /* process process grid*/
+                            2,           2,   /* k-cyclicity */
+                            0,           0)   /* starting point on the process grid*/
+                        );
+
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);	
+    parsec_add2arena_rect(&adt, otype,	
+                                 desc.super.mb, desc.super.nb, desc.super.mb);
+
+    int nodes = world;
+
+    tp = (parsec_issue_CPU_taskpool_t*)parsec_issue_CPU_new(&desc, rank, world, MATRIX_M, MATRIX_N, MATRIX_K);
+
+    assert( NULL != tp );
+    tp->arenas_datatypes[PARSEC_issue_CPU_DEFAULT_ADT_IDX] = adt;
+    PARSEC_OBJ_RETAIN(adt.arena);
+
+    rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    rc = parsec_context_wait(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+    parsec_taskpool_free(&tp->super);
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    return 0;
+}
+
+%}
