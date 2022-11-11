@@ -102,7 +102,7 @@ typedef struct Grid
 	double physicalMinCoords[DIMENSIONS_NUMBER];
 	double physicalSize[DIMENSIONS_NUMBER];
 
-    parsec_multidimensional_grid_t *desc;
+    parsec_multidimensional_grid_t desc;
 } Grid;
 
 Grid newGrid(int rank, int nodes)
@@ -173,24 +173,25 @@ Grid newGrid(int rank, int nodes)
 		grid.subgridTempSize[i] = 0;
 	}
 
-    grid.desc = (parsec_multidimensional_grid_t*)malloc(sizeof(parsec_multidimensional_grid_t)*grid.conservativesNumber*grid.directionsNumber);
-    assert(grid.desc != NULL);
+    //grid.desc = (parsec_multidimensional_grid_t*)malloc(sizeof(parsec_multidimensional_grid_t)*grid.conservativesNumber*grid.directionsNumber);
+    //assert(grid.desc != NULL);
 
-    for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
+    //for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
+    int i=0;
     {
-        parsec_multidimensional_grid_init(&grid.desc[i],
+        parsec_multidimensional_grid_init(&grid.desc,
                                PARSEC_MATRIX_DOUBLE,
                                nodes, rank,
                                5, 3,
                                grid.subgridNumber[0], grid.subgridNumber[1], grid.subgridNumber[2], grid.conservativesNumber, grid.directionsNumber,
                                grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[2],
                                1, 1, 1, 1, 1);
-        grid.desc[i].grid = parsec_data_allocate((size_t)grid.desc[i].nb_local_tiles *
-                                        (size_t)grid.desc[i].bsiz *
-                                        (size_t)parsec_datadist_getsizeoftype(grid.desc[i].mtype));
-        assert(grid.desc[i].grid != NULL);
+        grid.desc.grid = parsec_data_allocate((size_t)grid.desc.nb_local_tiles *
+                                        (size_t)grid.desc.bsiz *
+                                        (size_t)parsec_datadist_getsizeoftype(grid.desc.mtype));
+        assert(grid.desc.grid != NULL);
 
-        parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc[i], "grid.desc[");
+        parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc, "grid.desc[");
     }
 
 	return grid;
@@ -295,17 +296,17 @@ RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
 //     <- descGridDC(x, y, z,cd%conservatives_number, cd/conservatives_number)
 
 RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
-    -> (c==1) ? GRID_CD[cd = c+d*conservatives_number] LBM_STEP(x, y, z, 0) : GRID_TO Exchange(x, y, z, 5, c, d, 0, 0)
+    -> GRID_CD[cd = (c+d*conservatives_number)] LBM_STEP(x, y, z, 0)
     
-CTL TEST_BROADCAST_3 <- (c==0 && d==0) ? TEST_BROADCAST_3 LBM_STEP(x, y, z, 0)
+// CTL TEST_BROADCAST_3 <- (c==0 && d==0) ? TEST_BROADCAST_3 LBM_STEP(x, y, z, 0)
 
-CTL TEST_BROADCAST_1 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_1 LBM_STEP(x, y, z_iterator, 0)
+// CTL TEST_BROADCAST_1 -> (z==0 && c==0 && d==0) ? [z_iterator_2=0..subgrid_number_z-1] TEST_BROADCAST_1 LBM_STEP(x, y, z_iterator_2, 0) : [z_iterator_2=0..subgrid_number_z-1] TEST_BROADCAST_1 LBM_STEP(x, y, z_iterator_2, 0)
 
-CTL TEST_BROADCAST_2 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_2 LBM_STEP(x, y, z_iterator, 0)
+// CTL TEST_BROADCAST_2 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_2 LBM_STEP(x, y, z_iterator, 0)
 
-CTL TEST_BROADCAST_4 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_4 LBM_STEP(x, y, z_iterator, 0)
+// CTL TEST_BROADCAST_4 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_4 LBM_STEP(x, y, z_iterator, 0)
 
-CTL TEST_BROADCAST_5 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_5 LBM_STEP(x, y, z_iterator, 0)
+// CTL TEST_BROADCAST_5 -> [z_iterator=0..subgrid_number_z-1] (z==0 && c==0 && d==0) ? TEST_BROADCAST_5 LBM_STEP(x, y, z_iterator, 0)
 
 BODY
     double *grid = INITIAL_GRID;
@@ -319,7 +320,8 @@ BODY
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
-        grid[i] = 1;
+        grid[i] = c+d*conservatives_number;
+        grid[i] = 42;
     }
 
     printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
@@ -354,22 +356,22 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
 // do a dump_task_class
 // + asseerts ...
 
-CTL TEST_BROADCAST_1 <- TEST_BROADCAST_1 FillGrid(x, y, 0, 0, 0)
+// CTL TEST_BROADCAST_1 <- TEST_BROADCAST_1 FillGrid(x, y, 0, 0, 0)
 
-CTL TEST_BROADCAST_2 <- TEST_BROADCAST_2 FillGrid(x, y, 0, 0, 0)
+// CTL TEST_BROADCAST_2 <- TEST_BROADCAST_2 FillGrid(x, y, 0, 0, 0)
 
-CTL TEST_BROADCAST_3 -> TEST_BROADCAST_3 FillGrid(x, y, z, 0, 0)
+// CTL TEST_BROADCAST_3 -> TEST_BROADCAST_3 FillGrid(x, y, z, 0, 0)
 
 RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
-    <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/directions_number)
-        : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/directions_number, 2, 1)
+    <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
+        : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/conservatives_number, 2, 1)
 
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/directions_number)
-        : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/directions_number, 0, 0)
+    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
+        : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/conservatives_number, 0, 0)
 
-CTL TEST_BROADCAST_4 <- TEST_BROADCAST_4 FillGrid(x, y, 0, 0, 0)
+// CTL TEST_BROADCAST_4 <- TEST_BROADCAST_4 FillGrid(x, y, 0, 0, 0)
 
-CTL TEST_BROADCAST_5 <- TEST_BROADCAST_5 FillGrid(x, y, 0, 0, 0)
+// CTL TEST_BROADCAST_5 <- TEST_BROADCAST_5 FillGrid(x, y, 0, 0, 0)
 
 // CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
 //     <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
@@ -398,18 +400,30 @@ CTL TEST_BROADCAST_5 <- TEST_BROADCAST_5 FillGrid(x, y, 0, 0, 0)
 //     -> (s!=number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
 
 
-BODY [type=CUDA]
-    double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
-    subgrid[0][0] = GRID_CD[0];
-    subgrid[1][0] = GRID_CD[1];
-    subgrid[2][0] = GRID_CD[2];
-    subgrid[0][1] = GRID_CD[3];
-    subgrid[1][1] = GRID_CD[4];
-    subgrid[2][1] = GRID_CD[5];
+// BODY [type=CUDA]
+//     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+//     subgrid[0][0] = GRID_CD[0];
+//     subgrid[1][0] = GRID_CD[1];
+//     subgrid[2][0] = GRID_CD[2];
+//     subgrid[0][1] = GRID_CD[3];
+//     subgrid[1][1] = GRID_CD[4];
+//     subgrid[2][1] = GRID_CD[5];
 
-    printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
-                rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
-END
+//     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
+//                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
+
+//     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
+//                 rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+
+//     /*for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+//     {
+//         for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
+//         {
+//             double *mat = GRID_CD[cd];
+//             mat[i] += 1;
+//         }
+//     }*/
+// END
 
 BODY
     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
@@ -423,6 +437,10 @@ BODY
 
     printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
+
+    printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
+                rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+
 END
 
 
@@ -445,9 +463,9 @@ side = 0 .. 1
 
 //cd = conservative + direction * gridParameters.conservativesNumber;
 
-RW GRID_TO <- (dimension==0 && side==0) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s)
+RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s)
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-        -> (dimension==2 && side==1) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s+1)
+        -> (dimension==2 && side==1) ? [other_var=3] GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s+1)
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
 
 /*
@@ -505,8 +523,11 @@ RW FINAL_GRID[p] [p=0..3] <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, numb
     <- (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, number_of_steps-1)
 */
 
-BODY [type=CUDA]
+BODY
+    double *mat = (double*)(FINAL_GRID);
+
     printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d)\n", rank, x, y, z, c, d);
+    printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
 END
 
 extern "C" %{
@@ -542,9 +563,9 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 3;
+    number_of_steps = 1;
 
-    parsec = parsec_init(-1, &argc, &argv);
+    parsec = parsec_init(1, &argc, &argv);
 
     int nodes = world;
 
@@ -563,7 +584,7 @@ int main(int argc, char *argv[])
                                  grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.subgridTrueSize[2]*grid.conservativesNumber*grid.directionsNumber, grid.subgridTrueSize[0]);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
-                                grid.desc, grid,
+                                &grid.desc, grid,
                                 rank, world,
                                 grid.subgridNumber[0], grid.subgridNumber[1], grid.subgridNumber[2],
                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[2], grid.conservativesNumber, grid.directionsNumber,
@@ -582,15 +603,19 @@ int main(int argc, char *argv[])
     rc = parsec_context_wait(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
-printf("final : %f\n", ((double*)(grid.desc[0].grid))[0]);
+    for(int cd=0; cd<grid.conservativesNumber*grid.directionsNumber; cd++) {
+        double *mat = &(((double*)grid.desc.grid)[cd*grid.subgridNumber[0]*grid.subgridNumber[1]*grid.subgridNumber[2]]);
+        printf("for cd=%d, final : %f\n", cd, *mat);
+    }
 
 
     parsec_taskpool_free(&tp->super);
 
-    for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
+    //for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
+    int i=0;
     {
-        parsec_data_free(grid.desc[i].grid);
-        parsec_grid_destroy(&grid.desc[i]);
+        parsec_data_free(grid.desc.grid);
+        parsec_grid_destroy(&grid.desc);
     }
 
     parsec_fini(&parsec);
