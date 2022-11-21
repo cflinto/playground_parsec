@@ -354,9 +354,6 @@ RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_TO Exchan
 RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 2, 1)
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s, 2, 1, 0, 0)
 
-CTL X <- (s!=0) ? X LBM_STEP(x, y, z, s-1)
-    -> (s!=number_of_steps-1) ? X LBM_STEP(x, y, z, s+1)
-
 
 // BODY [type=CUDA]
 //     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
