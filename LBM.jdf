@@ -28,7 +28,10 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 	}
 }
 
+#include <stdio.h>
+#include <sys/time.h>
 #include <math.h>
+
 #include "parsec.h"
 #include "parsec/data_dist/matrix/matrix.h"
 #include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
@@ -516,6 +519,8 @@ int main(int argc, char *argv[])
     parsec_LBM_taskpool_t *tp;
     //int mycounter;
 
+    struct timeval begin_initialization, end_initialization, end_execution;
+
     parsec_arena_datatype_t adt;
     parsec_datatype_t otype;
 
@@ -559,6 +564,8 @@ int main(int argc, char *argv[])
     parsec_add2arena_rect(&adt, otype,
                                  grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.subgridTrueSize[2]*grid.conservativesNumber*grid.directionsNumber, grid.subgridTrueSize[0]);
 
+    gettimeofday(&begin_initialization, 0);
+
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
                                 &grid.desc, grid,
                                 rank, world,
@@ -576,7 +583,9 @@ int main(int argc, char *argv[])
     PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
     rc = parsec_context_start(parsec);
     PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    gettimeofday(&end_initialization, 0);
     rc = parsec_context_wait(parsec);
+    gettimeofday(&end_execution, 0);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
     for(int cd=0; cd<grid.conservativesNumber*grid.directionsNumber; cd++) {
@@ -593,6 +602,23 @@ int main(int argc, char *argv[])
         parsec_data_free(grid.desc.grid);
         parsec_grid_destroy(&grid.desc);
     }
+
+    long seconds;
+    long microseconds;
+    double elapsed;
+
+    seconds = end_execution.tv_sec - end_initialization.tv_sec;
+    microseconds = end_execution.tv_usec - end_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("execution_time: %f\n", elapsed);
+    seconds = end_initialization.tv_sec - begin_initialization.tv_sec;
+    microseconds = end_initialization.tv_usec - begin_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("initialization_time: %f\n", elapsed);
+    seconds = end_execution.tv_sec - begin_initialization.tv_sec;
+    microseconds = end_execution.tv_usec - begin_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("total_time: %f\n", elapsed);
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)
