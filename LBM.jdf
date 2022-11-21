@@ -52,9 +52,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (16)
-#define PROBLEM_SIZE_Y (16)
-#define PROBLEM_SIZE_Z (16)
+#define PROBLEM_SIZE_X (8)
+#define PROBLEM_SIZE_Y (8)
+#define PROBLEM_SIZE_Z (8)
 
 typedef struct Grid
 {
@@ -311,9 +311,7 @@ BODY
         grid[i] = 0;
     }
 
-    printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
-    // printf("FillGrid: %d %d %d %d %d (grid=%p)   (test_subgrid_0=%p, test_subgrid_1=%p, test_subgrid_2=%p, test_subgrid_3=%p, test_subgrid_4=%p, test_subgrid_5=%p)\n",
-    //         x, y, z, c, d, grid, test_subgrid_0, test_subgrid_1, test_subgrid_2, test_subgrid_3, test_subgrid_4, test_subgrid_5);
+    //printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
 END
 
 
@@ -401,8 +399,8 @@ BODY
     // subgrid[1][1] = GRID_CD_1_1;
     // subgrid[2][1] = GRID_CD_2_1;
 
-    printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
-               rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+    //printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
+    //           rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
@@ -468,18 +466,19 @@ RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservativ
 //     -> (conservative==2 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
 
 
-BODY [type=CUDA]
-    printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
-               rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
+// BODY [type=CUDA]
+//     printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
+//                rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
+
+//     // Do nothing
+// END
+
+BODY
+    //printf("[Process %d] kernel Exchange CPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
+    //           rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
 
     // Do nothing
 END
-
-
-// BODY
-//     printf("[Process %d] kernel Exchange CPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
-//                 rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
-// END
 
 WriteBack(x, y, z, c, d)
 
@@ -507,7 +506,7 @@ BODY
     double *mat = (double*)(FINAL_GRID);
 
     //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d)\n", rank, x, y, z, c, d);
-    printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
+    //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
 END
 
 extern "C" %{
@@ -543,13 +542,13 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 50;
+    number_of_steps = 10000;
 
     parsec = parsec_init(-1, &argc, &argv);
 
     int nodes = world;
 
-    #if defined(PARSEC_HAVE_CUDA)
+#if defined(PARSEC_HAVE_CUDA)
     parsec_info_id_t CuHI = parsec_info_register(&parsec_per_stream_infos, "CUBLAS::HANDLE",
                                                  destroy_cublas_handle, NULL,
                                                  create_cublas_handle, NULL,
