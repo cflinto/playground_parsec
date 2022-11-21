@@ -324,7 +324,7 @@ BODY
         grid[i] = 0;
     }
 
-    //printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
+    printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
     // printf("FillGrid: %d %d %d %d %d (grid=%p)   (test_subgrid_0=%p, test_subgrid_1=%p, test_subgrid_2=%p, test_subgrid_3=%p, test_subgrid_4=%p, test_subgrid_5=%p)\n",
     //         x, y, z, c, d, grid, test_subgrid_0, test_subgrid_1, test_subgrid_2, test_subgrid_3, test_subgrid_4, test_subgrid_5);
 END
@@ -372,8 +372,6 @@ RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
 //     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
 //         : GRID_CD[cd2 = cd] LBM_STEP(x, y, z, s+1)
 
-
-
 RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
         : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/conservatives_number, 2, 1)
@@ -382,10 +380,10 @@ RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/conservatives_number, 0, 0)
 
 
-
 RW ABC[it = 0..5]
     <- (s==0) ? NEW : ABC[it2 = it] LBM_STEP(x, y, z, s-1)
     -> (s<number_of_steps) ? ABC[it2 = it] LBM_STEP(x, y, z, s+1)
+
 
 // CTL TEST_BROADCAST_4 <- TEST_BROADCAST_4 FillGrid(x, y, 0, 0, 0)
 
@@ -453,8 +451,8 @@ BODY
     //printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
     //            rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 
-    //printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
-    //            rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+    printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
+               rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
@@ -521,8 +519,8 @@ RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservativ
 */
 
 BODY [type=CUDA]
-    //printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
-    //            rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
+    printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
+               rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
 END
 
 
@@ -557,7 +555,7 @@ BODY
     double *mat = (double*)(FINAL_GRID);
 
     //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d)\n", rank, x, y, z, c, d);
-    //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
+    printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, cW, d, mat[0]);
 END
 
 extern "C" %{
