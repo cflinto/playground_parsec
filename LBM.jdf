@@ -548,7 +548,7 @@ int main(int argc, char *argv[])
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
     number_of_steps = 2;
 
-    parsec = parsec_init(1, &argc, &argv);
+    parsec = parsec_init(-1, &argc, &argv);
 
     int nodes = world;
 
