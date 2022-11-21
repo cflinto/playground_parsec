@@ -112,8 +112,8 @@ Grid newGrid(int rank, int nodes)
 	grid.size[0] = PROBLEM_SIZE_X;
 	grid.size[1] = PROBLEM_SIZE_Y;
 	grid.size[2] = PROBLEM_SIZE_Z;
-    grid.conservativesNumber = 10;
-    grid.directionsNumber = 1;
+    grid.conservativesNumber = 3;
+    grid.directionsNumber = 4;
 
 	grid.subgridNumber[0] = 2;
 	grid.subgridNumber[1] = 2;
@@ -320,7 +320,7 @@ BODY
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
-        grid[i] = c+d*conservatives_number;
+        //grid[i] = c+d*conservatives_number;
         grid[i] = 0;
     }
 
@@ -339,38 +339,9 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(x, y, z, 0, 0)
 
-/*
-RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
-    <- [p=0..3] X TASK(n, p)
-*/
-/*
-RW GRID_CD[cd] [cd=0..conservatives_number*directions_number-1]
-    <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/directions_number)
-        : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/directions_number, 2, 1)
-*/
-
-
-
- //       : GRID_TO Exchange(x, y, z, s-1, %{ return cd%conservatives_number; %}, cd/directions_number, 2, 1)
-
 // do a dump_task_class
 // + asseerts ...
 
-// CTL TEST_BROADCAST_1 <- TEST_BROADCAST_1 FillGrid(x, y, 0, 0, 0)
-
-// CTL TEST_BROADCAST_2 <- TEST_BROADCAST_2 FillGrid(x, y, 0, 0, 0)
-
-// CTL TEST_BROADCAST_3 -> TEST_BROADCAST_3 FillGrid(x, y, z, 0, 0)
-
-
-
-// TODO: smt like this:
-// RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
-//     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
-//         : GRID_CD[cd2 = cd] LBM_STEP(x, y, z, s-1)
-
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
-//         : GRID_CD[cd2 = cd] LBM_STEP(x, y, z, s+1)
 
 RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
@@ -378,15 +349,6 @@ RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
 
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/conservatives_number, 0, 0)
-
-
-// CTL TEST_BROADCAST_4 <- TEST_BROADCAST_4 FillGrid(x, y, 0, 0, 0)
-
-// CTL TEST_BROADCAST_5 <- TEST_BROADCAST_5 FillGrid(x, y, 0, 0, 0)
-
-// CTL TEST_CTL[cd] [cd = 0..conservatives_number*directions_number-1]
-//     <- (s>0) ? TEST_CTL[cd] LBM_STEP(x, y, z, s-1)
-//     -> (s<number_of_steps-1) ? TEST_CTL[cd] LBM_STEP(x, y, z, s+1)
 
 
 // RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
@@ -441,10 +403,6 @@ BODY
     subgrid[0][1] = GRID_CD[3];
     subgrid[1][1] = GRID_CD[4];
     subgrid[2][1] = GRID_CD[5];
-
-
-    //printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
-    //            rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
 
     printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
                rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
@@ -516,6 +474,8 @@ RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservativ
 BODY [type=CUDA]
     printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
                rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
+
+    // Do nothing
 END
 
 
