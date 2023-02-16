@@ -314,7 +314,7 @@ BODY
         grid[i] = 0;
     }
 
-    //printf("FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
+    fprintf(stderr, "FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
 END
 
 
@@ -330,6 +330,20 @@ s = 0 .. number_of_steps-1
 // do a dump_task_class
 // + asseerts ...
 
+RW ABC[it = 0..0]
+    <- (s==0) ? NEW : ABC[it2 = it] LBM_STEP(x, y, z, s-1)
+    -> (s<number_of_steps) ? ABC[it2 = it] LBM_STEP(x, y, z, s+1)
+
+// RW ABC[it = 0..2]
+//     <- (s==0 && it==0) ? NEW
+//     <- (it>0) ? ABC[it2 = it-1] LBM_STEP(x, y, z, s)
+//     <- (it==0 && s>0) ? ABC[it2 = 2] LBM_STEP(x, y, z, s-1)
+//     -> (it==2 && s<number_of_steps) ? ABC[it2 = 0] LBM_STEP(x, y, z, s+1)
+//     -> (it<2) ? ABC[it2 = it+1] LBM_STEP(x, y, z, s)
+
+RW ABC3[it = 0..0]
+    <- (s==0) ? NEW : ABC3[it2 = it] LBM_STEP(x, y, z, s-1)
+    -> (s<number_of_steps) ? ABC3[it2 = it] LBM_STEP(x, y, z, s+1)
 
 RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
     <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
@@ -337,6 +351,10 @@ RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
 
     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
         : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/conservatives_number, 0, 0)
+
+RW ABC2[it = 0..0]
+    <- (s==0) ? NEW : ABC2[it2 = it] LBM_STEP(x, y, z, s-1)
+    -> (s<number_of_steps) ? ABC2[it2 = it] LBM_STEP(x, y, z, s+1)
 
 
 // RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
@@ -356,6 +374,7 @@ RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
 
 // RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 2, 1)
 //     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s, 2, 1, 0, 0)
+
 
 
 // BODY [type=CUDA]
@@ -399,15 +418,15 @@ BODY
     // subgrid[1][1] = GRID_CD_1_1;
     // subgrid[2][1] = GRID_CD_2_1;
 
-    //printf("[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
-    //           rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
+    fprintf(stderr, "[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
+               rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
 
     for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
     {
         for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
         {
             double *mat = subgrid[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber];
-            mat[i] += 1;
+            mat[i] += 1 + (double) (s+1) * mat[i];
         }
     }
 
@@ -433,9 +452,9 @@ side = 0 .. 1
 
 //cd = conservative + direction * gridParameters.conservativesNumber;
 
-RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s)
+RW GRID_TO <- (dimension==0 && side==0) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s)
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-        -> (dimension==2 && side==1) ? [other_var=3] GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s+1)
+        -> (dimension==2 && side==1) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s+1)
             : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
 
 // RW GRID_TO
@@ -474,10 +493,18 @@ RW GRID_TO <- (dimension==0 && side==0) ? [other_var=2] GRID_CD[cd = conservativ
 // END
 
 BODY
-    //printf("[Process %d] kernel Exchange CPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
-    //           rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
+    double *mat = GRID_TO;
 
-    // Do nothing
+    fprintf(stderr, "[Process %d] kernel Exchange CPU (%d %d %d %d %d %d %d %d), first_value=%f grid_to=%p\n",
+               rank, x, y, z, s, conservative, direction, dimension, side, mat[0], mat);
+
+    for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+    {
+        for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
+        {
+            mat[i] += 1;
+        }
+    }
 END
 
 WriteBack(x, y, z, c, d)
@@ -505,7 +532,7 @@ RW FINAL_GRID <- GRID_CD[cd = c+d*conservatives_number] LBM_STEP(x, y, z, number
 BODY
     double *mat = (double*)(FINAL_GRID);
 
-    //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d)\n", rank, x, y, z, c, d);
+    fprintf(stderr, "[Process %d] kernel WRITE_BACK (%d %d %d %d %d) (first value = %f)\n", rank, x, y, z, c, d, mat[0]);
     //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
 END
 
@@ -544,7 +571,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 10000;
+    number_of_steps = 3;
 
     parsec = parsec_init(-1, &argc, &argv);
 
