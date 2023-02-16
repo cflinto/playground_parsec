@@ -615,9 +615,11 @@ int main(int argc, char *argv[])
     gettimeofday(&end_execution, 0);
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
-    for(int cd=0; cd<grid.conservativesNumber*grid.directionsNumber; cd++) {
-        double *mat = &(((double*)grid.desc.grid)[cd*grid.subgridNumber[0]*grid.subgridNumber[1]*grid.subgridNumber[2]]);
-        printf("for cd=%d, final : %f\n", cd, *mat);
+    if( rank == 0 ) {
+        for(int cd=0; cd<grid.conservativesNumber*grid.directionsNumber; cd++) {
+            double *mat = &(((double*)grid.desc.grid)[cd*grid.subgridNumber[0]*grid.subgridNumber[1]*grid.subgridNumber[2]]);
+            printf("for cd=%d, final : %f\n", cd, *mat);
+        }
     }
 
 
