@@ -50,7 +50,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 
 // HPC defines
 
-#define DIMENSIONS_NUMBER 3
+#define DIMENSIONS_NUMBER 2
 
 
 #define MAX_SUBGRIDS 256
@@ -83,7 +83,6 @@ typedef struct Grid
     int directionsNumber;
 
 	int subgridNumber[DIMENSIONS_NUMBER];
-	int subgridLogicalSizeCompressed[DIMENSIONS_NUMBER];
 	int subgridOwnedSize[DIMENSIONS_NUMBER]; // cells owned uniquely by this subgrid
 	int subgridLogicalSize[DIMENSIONS_NUMBER]; // cells that need computation on this subgrid (includes cells that share the same computation)
 	int subgridTrueSize[DIMENSIONS_NUMBER]; // all the cells of the subgrid (including ghost cells = halo = overlap)
@@ -93,8 +92,6 @@ typedef struct Grid
 
     // Conceptually, the grid is a 5D array: (x, y, z, c, d)
 
-	size_t subgridCompressedSize[MAX_SUBGRIDS];
-	size_t subgridTempSize[MAX_SUBGRIDS];
 	int cellsPerSubgrid;
 	int subgridsNumber;
 	int currentSubgrid;
@@ -114,23 +111,18 @@ Grid newGrid(int rank, int nodes)
 
 	grid.size[0] = PROBLEM_SIZE_X;
 	grid.size[1] = PROBLEM_SIZE_Y;
-	grid.size[2] = PROBLEM_SIZE_Z;
-    grid.conservativesNumber = 3;
-    grid.directionsNumber = 2;
+    grid.conservativesNumber = 1;
+    grid.directionsNumber = 3;
 
 	grid.subgridNumber[0] = 2;
 	grid.subgridNumber[1] = 2;
-	grid.subgridNumber[2] = 2;
 	grid.subgridOwnedSize[0] = grid.size[0] / grid.subgridNumber[0];
 	grid.subgridOwnedSize[1] = grid.size[1] / grid.subgridNumber[1];
-	grid.subgridOwnedSize[2] = grid.size[2] / grid.subgridNumber[2];
 
     grid.sharedLayers[0][0] = 0;
-    grid.sharedLayers[0][1] = 1;
+    grid.sharedLayers[0][1] = 0;
     grid.sharedLayers[1][0] = 0;
-    grid.sharedLayers[1][1] = 1;
-    grid.sharedLayers[2][0] = 0;
-    grid.sharedLayers[2][1] = 1;
+    grid.sharedLayers[1][1] = 0;
 
     for(int d=0;d<DIMENSIONS_NUMBER;++d)
     {
@@ -138,29 +130,21 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 1;
-	grid.overlapSize[1] = 3;
-	grid.overlapSize[2] = 4;
+	grid.overlapSize[0] = 32;
+	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
 
 	grid.physicalMinCoords[0] = -1;
 	grid.physicalMinCoords[1] = -1;
-	grid.physicalMinCoords[2] = -1;
 	grid.physicalSize[0] = 2;
 	grid.physicalSize[1] = 2;
-	grid.physicalSize[2] = 2;
 
-	grid.subgridLogicalSizeCompressed[0] = grid.subgridLogicalSize[0];
-	grid.subgridLogicalSizeCompressed[1] = grid.subgridLogicalSize[1];
-	grid.subgridLogicalSizeCompressed[2] = grid.subgridLogicalSize[2];
 	grid.subgridTrueSize[0] = grid.subgridLogicalSize[0] + 2 * grid.overlapSize[0];
 	grid.subgridTrueSize[1] = grid.subgridLogicalSize[1] + 2 * grid.overlapSize[1];
-	grid.subgridTrueSize[2] = grid.subgridLogicalSize[2] + 2 * grid.overlapSize[2];
-	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]) * (grid.subgridTrueSize[2]);
-	grid.subgridsNumber = grid.subgridNumber[0] * grid.subgridNumber[1] * grid.subgridNumber[2];
+	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]);
+	grid.subgridsNumber = grid.subgridNumber[0] * grid.subgridNumber[1];
 
-    int numberOfSharedLayers = 1; // TODO !
     for(int d=0;d<DIMENSIONS_NUMBER;++d)
     {
         assert(grid.size[d] % grid.subgridOwnedSize[d] == 0);
@@ -169,34 +153,21 @@ Grid newGrid(int rank, int nodes)
         assert(grid.subgridLogicalSize[d] <= grid.subgridTrueSize[d]);
     }
 
-	for (int i = 0; i < grid.subgridsNumber; ++i)
-	{
-		// init to a random value
-		grid.subgridCompressedSize[i] = 0;
-		grid.subgridTempSize[i] = 0;
-	}
+    // Initialize the grid
+    parsec_multidimensional_grid_init(&grid.desc,
+                            PARSEC_MATRIX_DOUBLE,
+                            nodes, rank,
+                            DIMENSIONS_NUMBER+2, DIMENSIONS_NUMBER,
+                            grid.subgridNumber[0], grid.subgridNumber[1], grid.conservativesNumber, grid.directionsNumber,
+                            grid.subgridTrueSize[0], grid.subgridTrueSize[1],
+                            1, 1, 1, 1); // TODO, maybe the stencil should be NxNxgrid.conservativesNumberxgrid.directionsNumber
+    grid.desc.grid = parsec_data_allocate((size_t)grid.desc.nb_local_tiles *
+                                    (size_t)grid.desc.bsiz *
+                                    (size_t)parsec_datadist_getsizeoftype(grid.desc.mtype));
+    assert(grid.desc.grid != NULL);
 
-    //grid.desc = (parsec_multidimensional_grid_t*)malloc(sizeof(parsec_multidimensional_grid_t)*grid.conservativesNumber*grid.directionsNumber);
-    //assert(grid.desc != NULL);
-
-    //for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
-    int i=0;
-    {
-        parsec_multidimensional_grid_init(&grid.desc,
-                               PARSEC_MATRIX_DOUBLE,
-                               nodes, rank,
-                               5, 3,
-                               grid.subgridNumber[0], grid.subgridNumber[1], grid.subgridNumber[2], grid.conservativesNumber, grid.directionsNumber,
-                               grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[2],
-                               1, 1, 1, 1, 1);
-        grid.desc.grid = parsec_data_allocate((size_t)grid.desc.nb_local_tiles *
-                                        (size_t)grid.desc.bsiz *
-                                        (size_t)parsec_datadist_getsizeoftype(grid.desc.mtype));
-        assert(grid.desc.grid != NULL);
-
-        parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc, "grid.desc[");
-    }
-
+    parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc, "grid.desc[");
+    
 	return grid;
 }
 
@@ -260,122 +231,76 @@ gridParameters       [ type="Grid" ]
 
 rank   [ type="int" ]
 nodes   [ type="int" ]
-subgrid_number_x   [ type="int" ] // row number
-subgrid_number_y   [ type="int" ] // column number
-subgrid_number_z   [ type="int" ]
-tile_size_x   [ type="int" ]
-tile_size_y   [ type="int" ]
-tile_size_z   [ type="int" ]
+subgrid_number_x   [ type="int" ]
+subgrid_number_y   [ type="int" ]
+subgrid_size_x   [ type="int" ]
+subgrid_size_y   [ type="int" ]
 conservatives_number   [ type="int" ]
 directions_number   [ type="int" ]
 overlap_x   [ type="int" ]
 overlap_y   [ type="int" ]
-overlap_z   [ type="int" ]
 number_of_steps   [ type="int" ]
 CuHI              [type = "parsec_info_id_t"]
 
 
-FillGrid(x, y, z, c, d)
+FillGrid(subgrid_x, subgrid_y, c, d)
 
-x = 0 .. subgrid_number_x-1
-y = 0 .. subgrid_number_y-1
-z = 0 .. subgrid_number_z-1
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
 c = 0 .. conservatives_number-1
 d = 0 .. directions_number-1
 
-: descGridDC(x, y, z, c, d)
-
-// RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
-//     -> (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, 0)
-//     -> (c==1 && d==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, 0)
-//     -> (c==2 && d==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, 0)
-//     -> (c==0 && d==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, 0)
-//     -> (c==1 && d==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, 0)
-//     -> (c==2 && d==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, 0)
+: descGridDC(subgrid_x, subgrid_y, c, d)
 
 
-RW INITIAL_GRID <- descGridDC(x, y, z, c, d)
-    -> GRID_CD[cd = (c+d*conservatives_number)] LBM_STEP(x, y, z, 0)
+RW SUBGRID_CD <- descGridDC(subgrid_x, subgrid_y, c, d)
+    -> SUBGRID_FROM[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, 0)
 
 
 BODY
-    double *grid = INITIAL_GRID;
+    double *subgrid = SUBGRID_CD;
 
-    // double *test_subgrid_0 = TEST_PARAMETRIZED_FLOW[0];
-    // double *test_subgrid_1 = TEST_PARAMETRIZED_FLOW[1];
-    // double *test_subgrid_2 = TEST_PARAMETRIZED_FLOW[2];
-    // double *test_subgrid_3 = TEST_PARAMETRIZED_FLOW[3];
-    // double *test_subgrid_4 = TEST_PARAMETRIZED_FLOW[4];
-    // double *test_subgrid_5 = TEST_PARAMETRIZED_FLOW[5];
-
-    for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+    for(int i=0;i<subgrid_size_x*subgrid_size_y;++i)
     {
-        //grid[i] = c+d*conservatives_number;
-        grid[i] = 0;
+        subgrid[i] = 0; // TODO
     }
 
-    fprintf(stderr, "FillGrid: %d %d %d %d %d (grid=%p)\n", x, y, z, c, d, grid);
+    fprintf(stderr, "FillGrid: %d %d %d %d (subgrid=%p)\n", subgrid_x, subgrid_y, c, d, subgrid);
 END
 
 
-LBM_STEP(x, y, z, s)
+LBM_STEP(subgrid_x, subgrid_y, s)
 
-x = 0 .. subgrid_number_x-1
-y = 0 .. subgrid_number_y-1
-z = 0 .. subgrid_number_z-1
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
 s = 0 .. number_of_steps-1
 
-: descGridDC(x, y, z, 0, 0)
+: descGridDC(subgrid_x, subgrid_y, 0, 0)
 
-// do a dump_task_class
-// + asseerts ...
+READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
+    <- (s==0)
+        ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
+        : SUBGRID_TO[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s-1)
+        
+WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
+    -> (s==number_of_steps-1)
+        ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
+        : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1)
 
-RW ABC[it = 0..0]
-    <- (s==0) ? NEW : ABC[it2 = it] LBM_STEP(x, y, z, s-1)
-    -> (s<number_of_steps) ? ABC[it2 = it] LBM_STEP(x, y, z, s+1)
+// dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
+// if dir==0 then subgrid_y>0
+// if dir==1 then subgrid_number_y-1<subgrid_y
+// WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
+//     //-> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0))
+//     -> (0)
+//         ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
 
-// RW ABC[it = 0..2]
-//     <- (s==0 && it==0) ? NEW
-//     <- (it>0) ? ABC[it2 = it-1] LBM_STEP(x, y, z, s)
-//     <- (it==0 && s>0) ? ABC[it2 = 2] LBM_STEP(x, y, z, s-1)
-//     -> (it==2 && s<number_of_steps) ? ABC[it2 = 0] LBM_STEP(x, y, z, s+1)
-//     -> (it<2) ? ABC[it2 = it+1] LBM_STEP(x, y, z, s)
-
-RW ABC3[it = 0..0]
-    <- (s==0) ? NEW : ABC3[it2 = it] LBM_STEP(x, y, z, s-1)
-    -> (s<number_of_steps) ? ABC3[it2 = it] LBM_STEP(x, y, z, s+1)
-
-RW GRID_CD[cd = 0..conservatives_number*directions_number-1]
-    <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, cd%conservatives_number, cd/conservatives_number)
-        : GRID_TO Exchange(x, y, z, s-1, cd%conservatives_number, cd/conservatives_number, 2, 1)
-
-    -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, cd%conservatives_number, cd/conservatives_number)
-        : GRID_TO Exchange(x, y, z, s, cd%conservatives_number, cd/conservatives_number, 0, 0)
-
-RW ABC2[it = 0..0]
-    <- (s==0) ? NEW : ABC2[it2 = it] LBM_STEP(x, y, z, s-1)
-    -> (s<number_of_steps) ? ABC2[it2 = it] LBM_STEP(x, y, z, s+1)
-
-
-// RW GRID_CD_0_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s-1, 0, 0, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 0) : GRID_TO Exchange(x, y, z, s, 0, 0, 0, 0)
-
-// RW GRID_CD_1_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s-1, 1, 0, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 0) : GRID_TO Exchange(x, y, z, s, 1, 0, 0, 0)
-
-// RW GRID_CD_2_0 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s-1, 2, 0, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 0) : GRID_TO Exchange(x, y, z, s, 2, 0, 0, 0)
-
-// RW GRID_CD_0_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s-1, 0, 1, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 0, 1) : GRID_TO Exchange(x, y, z, s, 0, 1, 0, 0)
-
-// RW GRID_CD_1_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s-1, 1, 1, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 1, 1) : GRID_TO Exchange(x, y, z, s, 1, 1, 0, 0)
-
-// RW GRID_CD_2_1 <- (s==0) ? INITIAL_GRID FillGrid(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s-1, 2, 1, 2, 1)
-//     -> (s==number_of_steps-1) ? FINAL_GRID WriteBack(x, y, z, 2, 1) : GRID_TO Exchange(x, y, z, s, 2, 1, 0, 0)
-
-
+// // by replacing (dir) with (1-dir) we have the opposite relation
+// READ VERTICAL_BORDERS_IN[dir = 0..1]
+//    // <- (s!=0 && ((1-dir)*(subgrid_number_y-1-subgrid_y)+(dir)*subgrid_y > 0))
+//     <- (0)
+//         ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
+//         : NULL
 
 // BODY [type=CUDA]
 //     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
@@ -400,125 +325,52 @@ RW ABC2[it = 0..0]
 // END
 
 BODY
-    double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+    double *subgrid_FROM_CD[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+    double *subgrid_TO_CD[gridParameters.conservativesNumber][gridParameters.directionsNumber];
 
-    // parametrized version:
-    subgrid[0][0] = GRID_CD[0];
-    subgrid[1][0] = GRID_CD[1];
-    subgrid[2][0] = GRID_CD[2];
-    subgrid[0][1] = GRID_CD[3];
-    subgrid[1][1] = GRID_CD[4];
-    subgrid[2][1] = GRID_CD[5];
+    // // parametrized version:
+    // subgrid[0][0] = GRID_CD[0];
+    // subgrid[1][0] = GRID_CD[1];
+    // subgrid[2][0] = GRID_CD[2];
+    // subgrid[2][0] = GRID_CD[2];
+    // subgrid[0][1] = GRID_CD[3];
+    // subgrid[1][1] = GRID_CD[4];
+    // subgrid[2][1] = GRID_CD[5];
 
-    // // non-parametrized version:
-    // subgrid[0][0] = GRID_CD_0_0;
-    // subgrid[1][0] = GRID_CD_1_0;
-    // subgrid[2][0] = GRID_CD_2_0;
-    // subgrid[0][1] = GRID_CD_0_1;
-    // subgrid[1][1] = GRID_CD_1_1;
-    // subgrid[2][1] = GRID_CD_2_1;
-
-    fprintf(stderr, "[Process %d] kernel LBM_STEP CPU (%d %d %d %d) first value of each matrix: %f %f %f %f %f %f\n",
-               rank, x, y, z, s, subgrid[0][0][0], subgrid[1][0][0], subgrid[2][0][0], subgrid[0][1][0], subgrid[1][1][0], subgrid[2][1][0]);
-
-    for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+    for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
     {
-        for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
-        {
-            double *mat = subgrid[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber];
-            mat[i] += 1 + (double) (s+1) * mat[i];
-        }
+        int c = cd / gridParameters.directionsNumber;
+        int d = cd % gridParameters.directionsNumber;
+        subgrid_FROM_CD[c][d] = SUBGRID_FROM[cd];
+        subgrid_TO_CD[c][d] = SUBGRID_TO[cd];
     }
 
-END
+    fprintf(stderr, "[Process %d] kernel LBM_STEP CPU (%d %d %d)\n",
+               rank, subgrid_x, subgrid_y, s);
 
-
-
-Exchange(x, y, z, s, conservative, direction, dimension, side)
-
-x = 0 .. subgrid_number_x-1
-y = 0 .. subgrid_number_y-1
-z = 0 .. subgrid_number_z-1
-s = 0 .. number_of_steps-2
-conservative = 0 .. conservatives_number-1
-direction = 0 .. directions_number-1
-dimension = 0 .. 3-1
-side = 0 .. 1
-//side = %{ return conservative; %}
-
-// name of the paper : Extending the PTG paradigm to run efficient high-order stencil codes
-
-: descGridDC(x, y, z, conservative, direction)
-
-//cd = conservative + direction * gridParameters.conservativesNumber;
-
-RW GRID_TO <- (dimension==0 && side==0) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s)
-            : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-        -> (dimension==2 && side==1) ? GRID_CD[cd = conservative+direction*conservatives_number] LBM_STEP(x, y, z, s+1)
-            : GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-
-// RW GRID_TO
-//     <- (conservative==0 && direction==0 && dimension==0 && side==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, s)
-//     <- (conservative==0 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-//     <- (conservative==1 && direction==0 && dimension==0 && side==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, s)
-//     <- (conservative==1 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-//     <- (conservative==2 && direction==0 && dimension==0 && side==0) ? GRID_CD_2_0 LBM_STEP(x, y, z, s)
-//     <- (conservative==2 && direction==0 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-//     <- (conservative==0 && direction==1 && dimension==0 && side==0) ? GRID_CD_0_1 LBM_STEP(x, y, z, s)
-//     <- (conservative==0 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-//     <- (conservative==1 && direction==1 && dimension==0 && side==0) ? GRID_CD_1_1 LBM_STEP(x, y, z, s)
-//     <- (conservative==1 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-//     <- (conservative==2 && direction==1 && dimension==0 && side==0) ? GRID_CD_2_1 LBM_STEP(x, y, z, s)
-//     <- (conservative==2 && direction==1 && !(dimension==0 && side==0)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==0)?(dimension-1):(dimension)), (side+1)%2)
-
-//     -> (conservative==0 && direction==0 && dimension==2 && side==1) ? GRID_CD_0_0 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==0 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-//     -> (conservative==1 && direction==0 && dimension==2 && side==1) ? GRID_CD_1_0 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==1 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-//     -> (conservative==2 && direction==0 && dimension==2 && side==1) ? GRID_CD_2_0 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==2 && direction==0 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-//     -> (conservative==0 && direction==1 && dimension==2 && side==1) ? GRID_CD_0_1 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==0 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-//     -> (conservative==1 && direction==1 && dimension==2 && side==1) ? GRID_CD_1_1 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==1 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-//     -> (conservative==2 && direction==1 && dimension==2 && side==1) ? GRID_CD_2_1 LBM_STEP(x, y, z, s+1)
-//     -> (conservative==2 && direction==1 && !(dimension==2 && side==1)) ? GRID_TO Exchange(x, y, z, s, conservative, direction, ((side==1)?(dimension+1):(dimension)), (side+1)%2)
-
-
-// BODY [type=CUDA]
-//     printf("[Process %d] kernel Exchange GPU (%d %d %d %d %d %d %d %d) grid_to=%p\n",
-//                rank, x, y, z, s, conservative, direction, dimension, side, GRID_TO);
-
-//     // Do nothing
-// END
-
-BODY
-    double *mat = GRID_TO;
-
-    fprintf(stderr, "[Process %d] kernel Exchange CPU (%d %d %d %d %d %d %d %d), first_value=%f grid_to=%p\n",
-               rank, x, y, z, s, conservative, direction, dimension, side, mat[0], mat);
-
-    for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
+    for(int i=0;i<subgrid_size_x*subgrid_size_y;++i)
     {
         for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
         {
+            double *mat = subgrid_FROM_CD[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber];
             mat[i] += 1;
+            subgrid_TO_CD[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber][i] = mat[i];
         }
     }
+
 END
 
-WriteBack(x, y, z, c, d)
+WriteBack(subgrid_x, subgrid_y, c, d)
 
-x = 0 .. subgrid_number_x-1
-y = 0 .. subgrid_number_y-1
-z = 0 .. subgrid_number_z-1
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
 c = 0 .. conservatives_number-1
 d = 0 .. directions_number-1
 
-: descGridDC(x, y, z, c, d)
+: descGridDC(subgrid_x, subgrid_y, c, d)
 
-RW FINAL_GRID <- GRID_CD[cd = c+d*conservatives_number] LBM_STEP(x, y, z, number_of_steps-1)
-    -> descGridDC(x, y, z, c, d)
+RW SUBGRID_CD <- SUBGRID_TO[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1)
+    -> descGridDC(subgrid_x, subgrid_y, c, d)
 
 // RW FINAL_GRID <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, number_of_steps-1)
 //     <- (c==1 && d==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, number_of_steps-1)
@@ -530,10 +382,9 @@ RW FINAL_GRID <- GRID_CD[cd = c+d*conservatives_number] LBM_STEP(x, y, z, number
 
 
 BODY
-    double *mat = (double*)(FINAL_GRID);
+    double *mat = (double*)(SUBGRID_CD);
 
-    fprintf(stderr, "[Process %d] kernel WRITE_BACK (%d %d %d %d %d) (first value = %f)\n", rank, x, y, z, c, d, mat[0]);
-    //printf("[Process %d] kernel WRITE_BACK (%d %d %d %d %d) first value: %f\n", rank, x, y, z, c, d, mat[0]);
+    fprintf(stderr, "[Process %d] kernel WRITE_BACK (%d %d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, c, d, mat[0]);
 END
 
 extern "C" %{
@@ -589,16 +440,17 @@ int main(int argc, char *argv[])
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
     parsec_add2arena_rect(&adt, otype,
-                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.subgridTrueSize[2]*grid.conservativesNumber*grid.directionsNumber, grid.subgridTrueSize[0]);
+                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[0]);
 
     gettimeofday(&begin_initialization, 0);
 
     tp = (parsec_LBM_taskpool_t*)parsec_LBM_new(
                                 &grid.desc, grid,
                                 rank, world,
-                                grid.subgridNumber[0], grid.subgridNumber[1], grid.subgridNumber[2],
-                                grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[2], grid.conservativesNumber, grid.directionsNumber,
-                                grid.overlapSize[0], grid.overlapSize[1], grid.overlapSize[2],
+                                grid.subgridNumber[0], grid.subgridNumber[1],
+                                grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.conservativesNumber, grid.directionsNumber,
+
+                                grid.overlapSize[0], grid.overlapSize[1],
                                 number_of_steps,
                                 CuHI);
 
