@@ -289,18 +289,21 @@ WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
 
 // dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
 // if dir==0 then subgrid_y>0
-// if dir==1 then subgrid_number_y-1<subgrid_y
-// WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
-//     //-> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0))
-//     -> (0)
-//         ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
+// if dir==1 then subgrid_number_y<subgrid_y
+WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
+    -> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-subgrid_y)+(1-dir)*subgrid_y > 0))
+        ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
 
-// // by replacing (dir) with (1-dir) we have the opposite relation
-// READ VERTICAL_BORDERS_IN[dir = 0..1]
-//    // <- (s!=0 && ((1-dir)*(subgrid_number_y-1-subgrid_y)+(dir)*subgrid_y > 0))
-//     <- (0)
-//         ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
-//         : NULL
+CTL MSG
+    -> (s!=(number_of_steps-1) && subgrid_y==0) ? VERTICAL_BORDERS_IN[it=0] LBM_STEP(subgrid_x, 0, s+1)
+    -> (s!=(number_of_steps-1) && subgrid_y==subgrid_number_y) ? VERTICAL_BORDERS_IN[it=1] LBM_STEP(subgrid_x, subgrid_number_y-1, s+1)
+
+// by replacing (dir) with (1-dir) we have the opposite relation
+READ VERTICAL_BORDERS_IN[dir = 0..1]
+    <- (s==0) ? NULL
+    <- /*(s!=0 && */((1-dir)*(subgrid_number_y-subgrid_y)+(dir)*subgrid_y > 0)
+        ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
+        : MSG LBM_STEP(subgrid_x, subgrid_y, s-1)
 
 // BODY [type=CUDA]
 //     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
