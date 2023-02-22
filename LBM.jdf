@@ -277,6 +277,24 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(subgrid_x, subgrid_y, 0, 0)
 
+RW INTERFACE_DOWN
+    <- (s!=0 && subgrid_y>0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
+    <- (s==0 && subgrid_y>0)
+        ? NEW
+        : NULL
+    -> (s!=number_of_steps-1 && subgrid_y>0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
+
+RW INTERFACE_UP
+    <- (s!=0 && subgrid_y<subgrid_number_y-1)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
+    <- (s==0 && subgrid_y<subgrid_number_y-1)
+        ? NEW
+        : NULL
+    -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
+
 READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
     <- (s==0)
         ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
@@ -287,23 +305,20 @@ WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
         ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
         : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1)
 
-// dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
-// if dir==0 then subgrid_y>0
-// if dir==1 then subgrid_number_y<subgrid_y
-WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
-    -> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-subgrid_y)+(1-dir)*subgrid_y > 0))
-        ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
+// // dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
+// // if dir==0 then subgrid_y>0
+// // if dir==1 then subgrid_number_y<subgrid_y
+// WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
+//     -> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-subgrid_y)+(1-dir)*subgrid_y > 0))
+//         ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
 
-CTL MSG
-    -> (s!=(number_of_steps-1) && subgrid_y==0) ? VERTICAL_BORDERS_IN[it=0] LBM_STEP(subgrid_x, 0, s+1)
-    -> (s!=(number_of_steps-1) && subgrid_y==subgrid_number_y) ? VERTICAL_BORDERS_IN[it=1] LBM_STEP(subgrid_x, subgrid_number_y-1, s+1)
+// // by replacing (dir) with (1-dir) we have the opposite relation
+// READ VERTICAL_BORDERS_IN[dir = 0..1]
+//     <- (s==0) ? NULL
+//     <- /*(s!=0 && */((1-dir)*(subgrid_number_y-subgrid_y)+(dir)*subgrid_y > 0)
+//         ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
+//         : NULL
 
-// by replacing (dir) with (1-dir) we have the opposite relation
-READ VERTICAL_BORDERS_IN[dir = 0..1]
-    <- (s==0) ? NULL
-    <- /*(s!=0 && */((1-dir)*(subgrid_number_y-subgrid_y)+(dir)*subgrid_y > 0)
-        ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
-        : MSG LBM_STEP(subgrid_x, subgrid_y, s-1)
 
 // BODY [type=CUDA]
 //     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
@@ -361,6 +376,24 @@ BODY
         }
     }
 
+END
+
+vertical_interface(x, y, side, s)
+
+x = 0 .. subgrid_number_x-1
+y = 0 .. subgrid_number_y-2
+side = 0 .. 1
+s = 0 .. number_of_steps-2
+
+: descGridDC(x, y, 0, 0)
+
+RW VERTICAL_INTERFACE
+    <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, s)
+    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, s)
+    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, s+1)
+    -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, s+1)
+
+BODY
 END
 
 WriteBack(subgrid_x, subgrid_y, c, d)
