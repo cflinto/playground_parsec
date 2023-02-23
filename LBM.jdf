@@ -295,6 +295,52 @@ RW INTERFACE_UP
     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
 
+// RW INTERFACE_DOWN[side_it=0..0]
+//     <- (s!=0 && subgrid_y>0)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
+//     <- (s==0 && subgrid_y>0)
+//         ? NEW
+//         : NULL
+//     -> (s!=number_of_steps-1 && subgrid_y>0)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
+
+// RW INTERFACE_UP[side_it=0..0]
+//     <- (s!=0 && subgrid_y<subgrid_number_y-1)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
+//     <- (s==0 && subgrid_y<subgrid_number_y-1)
+//         ? NEW
+//         : NULL
+//     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
+
+// // 0 = down, 1 = up
+// RW INTERFACE[side_it=0..1]
+//     <- (side_it==0 && s!=0 && subgrid_y>0)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
+//     <- (side_it==0 && s==0 && subgrid_y>0)
+//         ? NEW
+//     <- (side_it==0 && subgrid_y==0)
+//         ? NULL
+//     -> (side_it==0 && s!=number_of_steps-1 && subgrid_y>0)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
+//     <- (side_it==1 && s!=0 && subgrid_y<subgrid_number_y-1)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
+//     <- (side_it==1 && s==0 && subgrid_y<subgrid_number_y-1)
+//         ? NEW
+//     <- (side_it==1 && subgrid_y==subgrid_number_y-1)
+//         ? NULL
+//     -> (side_it==1 && s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
+
+// RW INTERFACE[side = 0..1]
+//     <- (s!=0 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, side, s-1)
+//     <- (s==0 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
+//         ? NEW
+//         : NULL
+//     -> (s!=number_of_steps-1 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
+//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1-side, s)
+
 READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
     <- (s==0)
         ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
@@ -394,6 +440,8 @@ RW VERTICAL_INTERFACE
     -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, s+1)
 
 BODY
+    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
+               rank, x, y, side, s);
 END
 
 WriteBack(subgrid_x, subgrid_y, c, d)
