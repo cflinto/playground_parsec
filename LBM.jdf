@@ -28,6 +28,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 	}
 }
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 #include <stdio.h>
 #include <sys/time.h>
 #include <math.h>
@@ -254,7 +256,7 @@ d = 0 .. directions_number-1
 
 
 RW SUBGRID_CD <- descGridDC(subgrid_x, subgrid_y, c, d)
-    -> SUBGRID_FROM[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, 0)
+    -> SUBGRID_FROM[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_CD"]
 
 
 BODY
@@ -277,23 +279,23 @@ s = 0 .. number_of_steps-1
 
 : descGridDC(subgrid_x, subgrid_y, 0, 0)
 
-RW INTERFACE_DOWN
-    <- (s!=0 && subgrid_y>0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
+RW INTERFACE_DOWN[c = 0 .. conservatives_number-1]
+    <- (s!=0 && subgrid_y>0 && s%overlap_y==0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 0, s/overlap_y-1) [type="VERTICAL_SLICE"]
     <- (s==0 && subgrid_y>0)
         ? NEW
-        : NULL
-    -> (s!=number_of_steps-1 && subgrid_y>0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
+        : NULL [type="VERTICAL_SLICE"]
+    -> (s!=number_of_steps-1 && subgrid_y>0 && s%overlap_y==overlap_y-1)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 1, s) [type="VERTICAL_SLICE"]
 
-RW INTERFACE_UP
-    <- (s!=0 && subgrid_y<subgrid_number_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
+RW INTERFACE_UP[c = 0 .. conservatives_number-1]
+    <- (s!=0 && subgrid_y<subgrid_number_y-1 && s%overlap_y==0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 1, s/overlap_y-1) [type="VERTICAL_SLICE"]
     <- (s==0 && subgrid_y<subgrid_number_y-1)
         ? NEW
-        : NULL
-    -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
+        : NULL [type="VERTICAL_SLICE"]
+    -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 0, s) [type="VERTICAL_SLICE"]
 
 // RW INTERFACE_DOWN[side_it=0..0]
 //     <- (s!=0 && subgrid_y>0)
@@ -344,12 +346,12 @@ RW INTERFACE_UP
 READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
     <- (s==0)
         ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
-        : SUBGRID_TO[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s-1)
+        : SUBGRID_TO[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_CD"]
         
 WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
     -> (s==number_of_steps-1)
         ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
-        : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1)
+        : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_CD"]
 
 // // dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
 // // if dir==0 then subgrid_y>0
@@ -424,20 +426,21 @@ BODY
 
 END
 
-vertical_interface(x, y, side, s)
+vertical_interface(x, y, c, side, s)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-2
+c = 0 .. conservatives_number-1
 side = 0 .. 1
-s = 0 .. number_of_steps-2
+s = 0 .. (number_of_steps-2)/overlap_y
 
 : descGridDC(x, y, 0, 0)
 
 RW VERTICAL_INTERFACE
-    <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, s)
-    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, s)
-    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, s+1)
-    -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, s+1)
+    <- (side==0) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, s*overlap_y) [type="VERTICAL_SLICE"]
+    <- (side==1) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, s*overlap_y) [type="VERTICAL_SLICE"]
+    -> (side==0) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, s*overlap_y+1) [type="VERTICAL_SLICE"]
+    -> (side==1) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, s*overlap_y+1) [type="VERTICAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
@@ -453,8 +456,8 @@ d = 0 .. directions_number-1
 
 : descGridDC(subgrid_x, subgrid_y, c, d)
 
-RW SUBGRID_CD <- SUBGRID_TO[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1)
-    -> descGridDC(subgrid_x, subgrid_y, c, d)
+RW SUBGRID_CD <- SUBGRID_TO[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_CD"]
+    -> descGridDC(subgrid_x, subgrid_y, c, d) [type="SUBGRID_CD"]
 
 // RW FINAL_GRID <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, number_of_steps-1)
 //     <- (c==1 && d==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, number_of_steps-1)
@@ -483,8 +486,14 @@ int main(int argc, char *argv[])
 
     struct timeval begin_initialization, end_initialization, end_execution;
 
-    parsec_arena_datatype_t adt;
-    parsec_datatype_t otype;
+    parsec_arena_datatype_t subgrid_cd_arena_datatype;
+    parsec_datatype_t subgrid_cd_datatype;
+
+    parsec_arena_datatype_t vertical_slice_arena_datatype;
+    parsec_datatype_t vertical_slice_datatype;
+
+    parsec_arena_datatype_t horizontal_slice_arena_datatype;
+    parsec_datatype_t horizontal_slice_datatype;
 
 #if defined(PARSEC_HAVE_MPI)
     {
@@ -522,9 +531,17 @@ int main(int argc, char *argv[])
     int CuHI = -1;
 #endif
 
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &otype);
-    parsec_add2arena_rect(&adt, otype,
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &subgrid_cd_datatype);
+    parsec_add2arena_rect(&subgrid_cd_arena_datatype, subgrid_cd_datatype,
                                  grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[0]);
+
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &vertical_slice_datatype);
+    parsec_add2arena_rect(&vertical_slice_arena_datatype, vertical_slice_datatype,
+                                 grid.subgridTrueSize[0], grid.overlapSize[1], grid.subgridTrueSize[0]);
+
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &horizontal_slice_datatype);
+    parsec_add2arena_rect(&horizontal_slice_arena_datatype, horizontal_slice_datatype,
+                                 grid.overlapSize[0], grid.subgridTrueSize[1], MAX(grid.overlapSize[0], grid.subgridTrueSize[1]));
 
     gettimeofday(&begin_initialization, 0);
 
@@ -533,14 +550,17 @@ int main(int argc, char *argv[])
                                 rank, world,
                                 grid.subgridNumber[0], grid.subgridNumber[1],
                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.conservativesNumber, grid.directionsNumber,
-
                                 grid.overlapSize[0], grid.overlapSize[1],
                                 number_of_steps,
                                 CuHI);
 
     assert( NULL != tp );
-    tp->arenas_datatypes[PARSEC_LBM_DEFAULT_ADT_IDX] = adt;
-    PARSEC_OBJ_RETAIN(adt.arena);
+    tp->arenas_datatypes[PARSEC_LBM_SUBGRID_CD_ADT_IDX] = subgrid_cd_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_VERTICAL_SLICE_ADT_IDX] = vertical_slice_arena_datatype;
+    // tp->arenas_datatypes[PARSEC_LBM_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
+    PARSEC_OBJ_RETAIN(subgrid_cd_arena_datatype.arena);
+    // PARSEC_OBJ_RETAIN(vertical_slice_arena_datatype.arena);
+    // PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
 
     rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
     PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
