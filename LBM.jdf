@@ -133,7 +133,7 @@ Grid newGrid(int rank, int nodes)
 
 
 	grid.overlapSize[0] = 1;
-	grid.overlapSize[1] = 1;
+	grid.overlapSize[1] = 2;
 
 	grid.currentSubgrid = 0;
 
@@ -282,20 +282,20 @@ s = 0 .. number_of_steps-1
 RW INTERFACE_DOWN[c = 0 .. conservatives_number-1]
     <- (s!=0 && subgrid_y>0 && s%overlap_y==0)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 0, s/overlap_y-1) [type="VERTICAL_SLICE"]
-    <- (s==0 && subgrid_y>0)
+    <- (subgrid_y>0 && s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y>0 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 1, s) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 1, s/overlap_y) [type="VERTICAL_SLICE"]
 
 RW INTERFACE_UP[c = 0 .. conservatives_number-1]
     <- (s!=0 && subgrid_y<subgrid_number_y-1 && s%overlap_y==0)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 1, s/overlap_y-1) [type="VERTICAL_SLICE"]
-    <- (s==0 && subgrid_y<subgrid_number_y-1)
+    <- (subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 0, s) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 0, s/overlap_y) [type="VERTICAL_SLICE"]
 
 // RW INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
 //     <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
@@ -445,21 +445,23 @@ BODY
 
 END
 
+
+
 vertical_interface(x, y, c, side, s)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-2
 c = 0 .. conservatives_number-1
 side = 0 .. 1
-s = 0 .. (number_of_steps-2)/overlap_y
+s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
 
 : descGridDC(x, y, 0, 0)
 
 RW VERTICAL_INTERFACE
-    <- (side==0) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, s*overlap_y) [type="VERTICAL_SLICE"]
-    <- (side==1) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, s*overlap_y) [type="VERTICAL_SLICE"]
-    -> (side==0) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, s*overlap_y+1) [type="VERTICAL_SLICE"]
-    -> (side==1) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, s*overlap_y+1) [type="VERTICAL_SLICE"]
+    <- (side==0) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
+    <- (side==1) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
+    -> (side==0) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
+    -> (side==1) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
@@ -553,7 +555,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 3;
+    number_of_steps = 7;
 
     parsec = parsec_init(-1, &argc, &argv);
 
