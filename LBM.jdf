@@ -113,8 +113,8 @@ Grid newGrid(int rank, int nodes)
 
 	grid.size[0] = PROBLEM_SIZE_X;
 	grid.size[1] = PROBLEM_SIZE_Y;
-    grid.conservativesNumber = 1;
-    grid.directionsNumber = 2;
+    grid.conservativesNumber = 3;
+    grid.directionsNumber = 3;
 
 	grid.subgridNumber[0] = 2;
 	grid.subgridNumber[1] = 2;
@@ -133,7 +133,7 @@ Grid newGrid(int rank, int nodes)
 
 
 	grid.overlapSize[0] = 1;
-	grid.overlapSize[1] = 2;
+	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
 
@@ -255,7 +255,7 @@ d = 0 .. directions_number-1
 : descGridDC(subgrid_x, subgrid_y, c, d)
 
 
-RW SUBGRID_CD <- descGridDC(subgrid_x, subgrid_y, c, d)
+RW SUBGRID_CD <- descGridDC(subgrid_x, subgrid_y, c, d) [type_data="SUBGRID_CD"]
     -> SUBGRID_FROM[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_CD"]
 
 
@@ -297,94 +297,19 @@ RW INTERFACE_UP[c = 0 .. conservatives_number-1]
     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 0, s/overlap_y) [type="VERTICAL_SLICE"]
 
-// RW INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
-//     <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
-//     <- (s==0 && subgrid_x>0)
-//         ? NEW
-//         : NULL [type="HORIZONTAL_SLICE"]
-//     -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 1, s) [type="HORIZONTAL_SLICE"]
-
-// RW INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
-//     <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 1, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
-//     <- (s==0 && subgrid_x<subgrid_number_x-1)
-//         ? NEW
-//         : NULL [type="HORIZONTAL_SLICE"]
-//     -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
-
-
-// RW INTERFACE_DOWN[side_it=0..0]
-//     <- (s!=0 && subgrid_y>0)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
-//     <- (s==0 && subgrid_y>0)
-//         ? NEW
-//         : NULL
-//     -> (s!=number_of_steps-1 && subgrid_y>0)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
-
-// RW INTERFACE_UP[side_it=0..0]
-//     <- (s!=0 && subgrid_y<subgrid_number_y-1)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
-//     <- (s==0 && subgrid_y<subgrid_number_y-1)
-//         ? NEW
-//         : NULL
-//     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
-
-// // 0 = down, 1 = up
-// RW INTERFACE[side_it=0..1]
-//     <- (side_it==0 && s!=0 && subgrid_y>0)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s-1)
-//     <- (side_it==0 && s==0 && subgrid_y>0)
-//         ? NEW
-//     <- (side_it==0 && subgrid_y==0)
-//         ? NULL
-//     -> (side_it==0 && s!=number_of_steps-1 && subgrid_y>0)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s)
-//     <- (side_it==1 && s!=0 && subgrid_y<subgrid_number_y-1)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s-1)
-//     <- (side_it==1 && s==0 && subgrid_y<subgrid_number_y-1)
-//         ? NEW
-//     <- (side_it==1 && subgrid_y==subgrid_number_y-1)
-//         ? NULL
-//     -> (side_it==1 && s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1)
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s)
-
-// RW INTERFACE[side = 0..1]
-//     <- (s!=0 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, side, s-1)
-//     <- (s==0 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
-//         ? NEW
-//         : NULL
-//     -> (s!=number_of_steps-1 && (subgrid_y*(1-side)+(subgrid_number_y-1-subgrid_y)*side>0))
-//         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1-side, s)
-
 READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
     <- (s==0)
-        ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
+        ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number) [type="SUBGRID_CD"]
+    <- (s%overlap_x==0)
+        ? R_SUBGRID_CD[cd_it = cd] read_horizontal_interfaces(subgrid_x, subgrid_y, s/overlap_x-1)
         : SUBGRID_TO[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_CD"]
         
 WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
     -> (s==number_of_steps-1)
-        ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number)
+        ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number) [type="SUBGRID_CD"]
+    -> (s%overlap_x==overlap_x-1)
+        ? W_SUBGRID_CD[cd_it = cd] write_horizontal_interfaces(subgrid_x, subgrid_y, s/overlap_x)
         : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_CD"]
-
-// // dir*(subgrid_number_y-1-subgrid_y)+(1-dir)*subgrid_y > 0 translates this:
-// // if dir==0 then subgrid_y>0
-// // if dir==1 then subgrid_number_y<subgrid_y
-// WRITE VERTICAL_BORDERS_OUT[dir = 0..1]
-//     -> (s!=(number_of_steps-1) && (dir*(subgrid_number_y-subgrid_y)+(1-dir)*subgrid_y > 0))
-//         ? VERTICAL_BORDERS_IN[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y+dir*2-1, s+1)
-
-// // by replacing (dir) with (1-dir) we have the opposite relation
-// READ VERTICAL_BORDERS_IN[dir = 0..1]
-//     <- (s==0) ? NULL
-//     <- /*(s!=0 && */((1-dir)*(subgrid_number_y-subgrid_y)+(dir)*subgrid_y > 0)
-//         ? VERTICAL_BORDERS_OUT[dir_it=dir] LBM_STEP(subgrid_x, subgrid_y-dir*2-1, s-1)
-//         : NULL
 
 
 // BODY [type=CUDA]
@@ -446,6 +371,97 @@ BODY
 END
 
 
+// exchange_horizontal(subgrid_x, subgrid_y, s)
+
+// subgrid_x = 0 .. subgrid_number_x-1
+// subgrid_y = 0 .. subgrid_number_y-1
+// s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+// : descGridDC(subgrid_x, subgrid_y, 0, 0)
+
+// RW INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
+//     <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s-1) [type="HORIZONTAL_SLICE"]
+//     <- (subgrid_x>0 && s%overlap_x==overlap_x-1)
+//         ? NEW
+//         : NULL [type="HORIZONTAL_SLICE"]
+//     -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 1, s) [type="HORIZONTAL_SLICE"]
+
+// RW INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
+//     <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x+1, subgrid_y, cd, 1, s-1) [type="HORIZONTAL_SLICE"]
+//     <- (subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+//         ? NEW
+//         : NULL [type="HORIZONTAL_SLICE"]
+//     -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x+1, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
+
+// // get the subgrid from LBM_STEP and send it back to LBM_STEP
+// RW SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
+//     <- SUBGRID_TO[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_CD"]
+//     -> SUBGRID_FROM[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_CD"]
+
+// BODY
+//     fprintf(stderr, "[Process %d] kernel write_horizontal_interfaces CPU (%d %d %d)\n",
+//                rank, subgrid_x, subgrid_y, s);
+// END
+
+write_horizontal_interfaces(subgrid_x, subgrid_y, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+: descGridDC(subgrid_x, subgrid_y, 0, 0)
+
+RW W_INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
+    <- (subgrid_x>0) ? NEW : NULL [type="HORIZONTAL_SLICE"]
+    -> (subgrid_x>0)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 1, s) [type="HORIZONTAL_SLICE"]
+
+RW W_INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
+    <- (subgrid_x<subgrid_number_x-1) ? NEW : NULL [type="HORIZONTAL_SLICE"]
+    -> (subgrid_x<subgrid_number_x-1)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
+
+// get the subgrid from LBM_STEP and send it to read_horizontal_interfaces
+RW W_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
+    <- SUBGRID_TO[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_CD"]
+    -> R_SUBGRID_CD[cd_it = cd] read_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
+
+BODY
+    fprintf(stderr, "[Process %d] kernel write_horizontal_interfaces CPU (%d %d %d)\n",
+               rank, subgrid_x, subgrid_y, s);
+END
+
+read_horizontal_interfaces(subgrid_x, subgrid_y, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+: descGridDC(subgrid_x, subgrid_y, 0, 0)
+
+READ R_INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
+    <- (subgrid_x>0)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s)
+        : NULL [type="HORIZONTAL_SLICE"]
+
+READ R_INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
+    <- (subgrid_x<subgrid_number_x-1)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 1, s)
+        : NULL [type="HORIZONTAL_SLICE"]
+
+// get the subgrid from write_horizontal_interfaces and send it to LBM_STEP
+RW R_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
+    <- W_SUBGRID_CD[cd_it = cd] write_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
+    -> SUBGRID_FROM[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_CD"]
+
+BODY
+    fprintf(stderr, "[Process %d] kernel read_horizontal_interfaces CPU (%d %d %d)\n",
+               rank, subgrid_x, subgrid_y, s);
+END
 
 vertical_interface(x, y, c, side, s)
 
@@ -464,28 +480,30 @@ RW VERTICAL_INTERFACE
     -> (side==1) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
 
 BODY
-    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
-               rank, x, y, side, s);
+    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d %d)\n",
+                rank, x, y, c, side, s);
 END
 
-// horizontal_interface(x, y, cd, side, s)
+horizontal_interface(x, y, cd, side, s)
 
-// x = 0 .. subgrid_number_x-2
-// y = 0 .. subgrid_number_y-1
-// cd = 0 .. conservatives_number*directions_number-1
-// side = 0 .. 1
-// s = 0 .. (number_of_steps-2)/overlap_x
+x = 0 .. subgrid_number_x-2
+y = 0 .. subgrid_number_y-1
+cd = 0 .. conservatives_number*directions_number-1
+side = 0 .. 1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
-// : descGridDC(x, y, 0, 0)
+: descGridDC(x, y, 0, 0)
 
-// RW HORIZONTAL_INTERFACE
-//     <- (side==0) ? INTERFACE_LEFT[cd_it = cd] LBM_STEP(x, y, s*overlap_x) [type="HORIZONTAL_SLICE"]
-//     <- (side==1) ? INTERFACE_RIGHT[cd_it = cd] LBM_STEP(x+1, y, s*overlap_x) [type="HORIZONTAL_SLICE"]
-//     -> (side==0) ? INTERFACE_RIGHT[cd_it = cd] LBM_STEP(x+1, y, s*overlap_x+1) [type="HORIZONTAL_SLICE"]
-//     -> (side==1) ? INTERFACE_LEFT[cd_it = cd] LBM_STEP(x, y, s*overlap_x+1) [type="HORIZONTAL_SLICE"]
+RW HORIZONTAL_INTERFACE
+    <- (side==0) ? W_INTERFACE_RIGHT[cd_it = cd] write_horizontal_interfaces(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
+    <- (side==1) ? W_INTERFACE_LEFT[cd_it = cd] write_horizontal_interfaces(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
+    -> (side==0) ? R_INTERFACE_LEFT[cd_it = cd] read_horizontal_interfaces(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
+    -> (side==1) ? R_INTERFACE_RIGHT[cd_it = cd] read_horizontal_interfaces(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
 
-// BODY
-// END
+BODY
+    fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d %d)\n",
+               rank, x, y, cd, side, s);
+END
 
 WriteBack(subgrid_x, subgrid_y, c, d)
 
@@ -597,10 +615,10 @@ int main(int argc, char *argv[])
     assert( NULL != tp );
     tp->arenas_datatypes[PARSEC_LBM_SUBGRID_CD_ADT_IDX] = subgrid_cd_arena_datatype;
     tp->arenas_datatypes[PARSEC_LBM_VERTICAL_SLICE_ADT_IDX] = vertical_slice_arena_datatype;
-    //tp->arenas_datatypes[PARSEC_LBM_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
     PARSEC_OBJ_RETAIN(subgrid_cd_arena_datatype.arena);
     PARSEC_OBJ_RETAIN(vertical_slice_arena_datatype.arena);
-    //PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
 
     rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
     PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
