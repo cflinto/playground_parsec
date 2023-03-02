@@ -159,10 +159,10 @@ Grid newGrid(int rank, int nodes)
     parsec_multidimensional_grid_init(&grid.desc,
                             PARSEC_MATRIX_DOUBLE,
                             nodes, rank,
-                            DIMENSIONS_NUMBER+2, DIMENSIONS_NUMBER,
-                            grid.subgridNumber[0], grid.subgridNumber[1], grid.conservativesNumber, grid.directionsNumber,
+                            DIMENSIONS_NUMBER+1, DIMENSIONS_NUMBER,
+                            grid.subgridNumber[0], grid.subgridNumber[1], grid.directionsNumber,
                             grid.subgridTrueSize[0], grid.subgridTrueSize[1],
-                            1, 1, 1, 1); // TODO, maybe the stencil should be NxNxgrid.conservativesNumberxgrid.directionsNumber
+                            1, 1, 1); // TODO, maybe the stencil should be NxNxgrid.conservativesNumberxgrid.directionsNumber
     grid.desc.grid = parsec_data_allocate((size_t)grid.desc.nb_local_tiles *
                                     (size_t)grid.desc.bsiz *
                                     (size_t)parsec_datadist_getsizeoftype(grid.desc.mtype));
@@ -245,29 +245,28 @@ number_of_steps   [ type="int" ]
 CuHI              [type = "parsec_info_id_t"]
 
 
-FillGrid(subgrid_x, subgrid_y, c, d)
+FillGrid(subgrid_x, subgrid_y, d)
 
 subgrid_x = 0 .. subgrid_number_x-1
 subgrid_y = 0 .. subgrid_number_y-1
-c = 0 .. conservatives_number-1
 d = 0 .. directions_number-1
 
-: descGridDC(subgrid_x, subgrid_y, c, d)
+: descGridDC(subgrid_x, subgrid_y, d)
 
 
-RW SUBGRID_CD <- descGridDC(subgrid_x, subgrid_y, c, d) [type_data="SUBGRID_CD"]
-    -> SUBGRID_FROM[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_CD"]
+RW SUBGRID_D <- descGridDC(subgrid_x, subgrid_y, d) [type_data="SUBGRID_D"]
+    -> SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_D"]
 
 
 BODY
-    double *subgrid = SUBGRID_CD;
+    double *subgrid = SUBGRID_D;
 
-    for(int i=0;i<subgrid_size_x*subgrid_size_y;++i)
+    for(int i=0;i<subgrid_size_x*subgrid_size_y*conservatives_number;++i)
     {
         subgrid[i] = 0; // TODO
     }
 
-    fprintf(stderr, "FillGrid: %d %d %d %d (subgrid=%p)\n", subgrid_x, subgrid_y, c, d, subgrid);
+    fprintf(stderr, "FillGrid: %d %d %d (subgrid=%p)\n", subgrid_x, subgrid_y, d, subgrid);
 END
 
 
@@ -277,39 +276,53 @@ subgrid_x = 0 .. subgrid_number_x-1
 subgrid_y = 0 .. subgrid_number_y-1
 s = 0 .. number_of_steps-1
 
-: descGridDC(subgrid_x, subgrid_y, 0, 0)
+: descGridDC(subgrid_x, subgrid_y, 0)
 
-RW INTERFACE_DOWN[c = 0 .. conservatives_number-1]
+RW INTERFACE_DOWN
     <- (s!=0 && subgrid_y>0 && s%overlap_y==0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 0, s/overlap_y-1) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s/overlap_y-1) [type="VERTICAL_SLICE"]
     <- (subgrid_y>0 && s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y>0 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, c, 1, s/overlap_y) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s/overlap_y) [type="VERTICAL_SLICE"]
 
-RW INTERFACE_UP[c = 0 .. conservatives_number-1]
+RW INTERFACE_UP
     <- (s!=0 && subgrid_y<subgrid_number_y-1 && s%overlap_y==0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 1, s/overlap_y-1) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s/overlap_y-1) [type="VERTICAL_SLICE"]
     <- (subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, c, 0, s/overlap_y) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s/overlap_y) [type="VERTICAL_SLICE"]
 
-READ SUBGRID_FROM[cd = 0..conservatives_number*directions_number-1]
+RW INTERFACE_LEFT
+    <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
+    <- (subgrid_x>0 && s%overlap_x==overlap_x-1)
+        ? NEW
+        : NULL [type="HORIZONTAL_SLICE"]
+    -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 1, s/overlap_x) [type="HORIZONTAL_SLICE"]
+
+RW INTERFACE_RIGHT
+    <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
+    <- (subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+        ? NEW
+        : NULL [type="HORIZONTAL_SLICE"]
+    -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s/overlap_x) [type="HORIZONTAL_SLICE"]
+
+READ SUBGRID_FROM[d = 0..directions_number-1]
     <- (s==0)
-        ? SUBGRID_CD FillGrid(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number) [type="SUBGRID_CD"]
-    <- (s%overlap_x==0)
-        ? R_SUBGRID_CD[cd_it = cd] read_horizontal_interfaces(subgrid_x, subgrid_y, s/overlap_x-1)
-        : SUBGRID_TO[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_CD"]
+        ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d)
+        : SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D"]
         
-WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
+WRITE SUBGRID_TO[d = 0..directions_number-1]
     -> (s==number_of_steps-1)
-        ? SUBGRID_CD WriteBack(subgrid_x, subgrid_y, cd%conservatives_number, cd/conservatives_number) [type="SUBGRID_CD"]
-    -> (s%overlap_x==overlap_x-1)
-        ? W_SUBGRID_CD[cd_it = cd] write_horizontal_interfaces(subgrid_x, subgrid_y, s/overlap_x)
-        : SUBGRID_FROM[cd_it=cd] LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_CD"]
+        ? SUBGRID_D WriteBack(subgrid_x, subgrid_y, d)
+        : SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_D"]
 
 
 // BODY [type=CUDA]
@@ -335,8 +348,8 @@ WRITE SUBGRID_TO[cd = 0..conservatives_number*directions_number-1]
 // END
 
 BODY
-    double *subgrid_FROM_CD[gridParameters.conservativesNumber][gridParameters.directionsNumber];
-    double *subgrid_TO_CD[gridParameters.conservativesNumber][gridParameters.directionsNumber];
+    double *subgrid_FROM_D[gridParameters.directionsNumber];
+    double *subgrid_TO_D[gridParameters.directionsNumber];
 
     // // parametrized version:
     // subgrid[0][0] = GRID_CD[0];
@@ -347,175 +360,133 @@ BODY
     // subgrid[1][1] = GRID_CD[4];
     // subgrid[2][1] = GRID_CD[5];
 
-    for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
+    for(int d=0;d<gridParameters.directionsNumber;++d)
     {
-        int c = cd / gridParameters.directionsNumber;
-        int d = cd % gridParameters.directionsNumber;
-        subgrid_FROM_CD[c][d] = SUBGRID_FROM[cd];
-        subgrid_TO_CD[c][d] = SUBGRID_TO[cd];
+        subgrid_FROM_D[d] = SUBGRID_FROM[d];
+        subgrid_TO_D[d] = SUBGRID_TO[d];
     }
 
     fprintf(stderr, "[Process %d] kernel LBM_STEP CPU (%d %d %d)\n",
                rank, subgrid_x, subgrid_y, s);
 
-    for(int i=0;i<subgrid_size_x*subgrid_size_y;++i)
+    for(int i=0;i<subgrid_size_x*subgrid_size_y*conservatives_number;++i)
     {
-        for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
+        for(int d=0;d<gridParameters.directionsNumber;++d)
         {
-            double *mat = subgrid_FROM_CD[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber];
+            double *mat = subgrid_FROM_D[d];
             mat[i] += 1;
-            subgrid_TO_CD[cd/gridParameters.directionsNumber][cd%gridParameters.directionsNumber][i] = mat[i];
+            subgrid_TO_D[d][i] = mat[i];
         }
     }
 
 END
 
-
-// exchange_horizontal(subgrid_x, subgrid_y, s)
+// write_horizontal_interfaces(subgrid_x, subgrid_y, s)
 
 // subgrid_x = 0 .. subgrid_number_x-1
 // subgrid_y = 0 .. subgrid_number_y-1
 // s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
-// : descGridDC(subgrid_x, subgrid_y, 0, 0)
+// : descGridDC(subgrid_x, subgrid_y, 0)
 
-// RW INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
-//     <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s-1) [type="HORIZONTAL_SLICE"]
-//     <- (subgrid_x>0 && s%overlap_x==overlap_x-1)
-//         ? NEW
-//         : NULL [type="HORIZONTAL_SLICE"]
-//     -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
+// RW W_INTERFACE_LEFT[d = 0 .. directions_number-1]
+//     <- (subgrid_x>0) ? NEW : NULL [type="HORIZONTAL_SLICE"]
+//     -> (subgrid_x>0)
 //         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 1, s) [type="HORIZONTAL_SLICE"]
 
-// RW INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
-//     <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x+1, subgrid_y, cd, 1, s-1) [type="HORIZONTAL_SLICE"]
-//     <- (subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
-//         ? NEW
-//         : NULL [type="HORIZONTAL_SLICE"]
-//     -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
-//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x+1, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
+// RW W_INTERFACE_RIGHT[d = 0 .. directions_number-1]
+//     <- (subgrid_x<subgrid_number_x-1) ? NEW : NULL [type="HORIZONTAL_SLICE"]
+//     -> (subgrid_x<subgrid_number_x-1)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
 
-// // get the subgrid from LBM_STEP and send it back to LBM_STEP
-// RW SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
+// // get the subgrid from LBM_STEP and send it to read_horizontal_interfaces
+// RW W_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
 //     <- SUBGRID_TO[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_CD"]
-//     -> SUBGRID_FROM[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_CD"]
+//     -> R_SUBGRID_CD[cd_it = cd] read_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
 
 // BODY
 //     fprintf(stderr, "[Process %d] kernel write_horizontal_interfaces CPU (%d %d %d)\n",
 //                rank, subgrid_x, subgrid_y, s);
 // END
 
-write_horizontal_interfaces(subgrid_x, subgrid_y, s)
+// read_horizontal_interfaces(subgrid_x, subgrid_y, s)
 
-subgrid_x = 0 .. subgrid_number_x-1
-subgrid_y = 0 .. subgrid_number_y-1
-s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+// subgrid_x = 0 .. subgrid_number_x-1
+// subgrid_y = 0 .. subgrid_number_y-1
+// s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
-: descGridDC(subgrid_x, subgrid_y, 0, 0)
+// : descGridDC(subgrid_x, subgrid_y, 0)
 
-RW W_INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
-    <- (subgrid_x>0) ? NEW : NULL [type="HORIZONTAL_SLICE"]
-    -> (subgrid_x>0)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 1, s) [type="HORIZONTAL_SLICE"]
+// READ R_INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
+//     <- (subgrid_x>0)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s)
+//         : NULL [type="HORIZONTAL_SLICE"]
 
-RW W_INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
-    <- (subgrid_x<subgrid_number_x-1) ? NEW : NULL [type="HORIZONTAL_SLICE"]
-    -> (subgrid_x<subgrid_number_x-1)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 0, s) [type="HORIZONTAL_SLICE"]
+// READ R_INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
+//     <- (subgrid_x<subgrid_number_x-1)
+//         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 1, s)
+//         : NULL [type="HORIZONTAL_SLICE"]
 
-// get the subgrid from LBM_STEP and send it to read_horizontal_interfaces
-RW W_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
-    <- SUBGRID_TO[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_CD"]
-    -> R_SUBGRID_CD[cd_it = cd] read_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
+// // get the subgrid from write_horizontal_interfaces and send it to LBM_STEP
+// RW R_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
+//     <- W_SUBGRID_CD[cd_it = cd] write_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
+//     -> SUBGRID_FROM[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_CD"]
 
-BODY
-    fprintf(stderr, "[Process %d] kernel write_horizontal_interfaces CPU (%d %d %d)\n",
-               rank, subgrid_x, subgrid_y, s);
-END
+// BODY
+//     fprintf(stderr, "[Process %d] kernel read_horizontal_interfaces CPU (%d %d %d)\n",
+//                rank, subgrid_x, subgrid_y, s);
+// END
 
-read_horizontal_interfaces(subgrid_x, subgrid_y, s)
-
-subgrid_x = 0 .. subgrid_number_x-1
-subgrid_y = 0 .. subgrid_number_y-1
-s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
-
-: descGridDC(subgrid_x, subgrid_y, 0, 0)
-
-READ R_INTERFACE_LEFT[cd = 0 .. conservatives_number*directions_number-1]
-    <- (subgrid_x>0)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, cd, 0, s)
-        : NULL [type="HORIZONTAL_SLICE"]
-
-READ R_INTERFACE_RIGHT[cd = 0 .. conservatives_number*directions_number-1]
-    <- (subgrid_x<subgrid_number_x-1)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, cd, 1, s)
-        : NULL [type="HORIZONTAL_SLICE"]
-
-// get the subgrid from write_horizontal_interfaces and send it to LBM_STEP
-RW R_SUBGRID_CD[cd = 0 .. conservatives_number*directions_number-1]
-    <- W_SUBGRID_CD[cd_it = cd] write_horizontal_interfaces(subgrid_x, subgrid_y, s) [type="SUBGRID_CD"]
-    -> SUBGRID_FROM[cd_it = cd] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_CD"]
-
-BODY
-    fprintf(stderr, "[Process %d] kernel read_horizontal_interfaces CPU (%d %d %d)\n",
-               rank, subgrid_x, subgrid_y, s);
-END
-
-vertical_interface(x, y, c, side, s)
+vertical_interface(x, y, side, s)
 
 x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-2
-c = 0 .. conservatives_number-1
 side = 0 .. 1
 s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
 
-: descGridDC(x, y, 0, 0)
+: descGridDC(x, y, 0)
 
 RW VERTICAL_INTERFACE
-    <- (side==0) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
-    <- (side==1) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
-    -> (side==0) ? INTERFACE_DOWN[c_it = c] LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
-    -> (side==1) ? INTERFACE_UP[c_it = c] LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
+    <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
+    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
+    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
+    -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
 
 BODY
-    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d %d)\n",
-                rank, x, y, c, side, s);
+    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
+                rank, x, y, side, s);
 END
 
-horizontal_interface(x, y, cd, side, s)
+horizontal_interface(x, y, side, s)
 
 x = 0 .. subgrid_number_x-2
 y = 0 .. subgrid_number_y-1
-cd = 0 .. conservatives_number*directions_number-1
 side = 0 .. 1
 s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
-: descGridDC(x, y, 0, 0)
+: descGridDC(x, y, 0)
 
 RW HORIZONTAL_INTERFACE
-    <- (side==0) ? W_INTERFACE_RIGHT[cd_it = cd] write_horizontal_interfaces(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
-    <- (side==1) ? W_INTERFACE_LEFT[cd_it = cd] write_horizontal_interfaces(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
-    -> (side==0) ? R_INTERFACE_LEFT[cd_it = cd] read_horizontal_interfaces(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
-    -> (side==1) ? R_INTERFACE_RIGHT[cd_it = cd] read_horizontal_interfaces(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
+    <- (side==0) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
 
 BODY
-    fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d %d)\n",
-               rank, x, y, cd, side, s);
+    fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
+               rank, x, y, side, s);
 END
 
-WriteBack(subgrid_x, subgrid_y, c, d)
+WriteBack(subgrid_x, subgrid_y, d)
 
 subgrid_x = 0 .. subgrid_number_x-1
 subgrid_y = 0 .. subgrid_number_y-1
-c = 0 .. conservatives_number-1
 d = 0 .. directions_number-1
 
-: descGridDC(subgrid_x, subgrid_y, c, d)
+: descGridDC(subgrid_x, subgrid_y, d)
 
-RW SUBGRID_CD <- SUBGRID_TO[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_CD"]
-    -> descGridDC(subgrid_x, subgrid_y, c, d) [type="SUBGRID_CD"]
+RW SUBGRID_D <- SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D"]
+    -> descGridDC(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
 
 // RW FINAL_GRID <- (c==0 && d==0) ? GRID_CD_0_0 LBM_STEP(x, y, z, number_of_steps-1)
 //     <- (c==1 && d==0) ? GRID_CD_1_0 LBM_STEP(x, y, z, number_of_steps-1)
@@ -527,9 +498,9 @@ RW SUBGRID_CD <- SUBGRID_TO[cd = c+d*conservatives_number] LBM_STEP(subgrid_x, s
 
 
 BODY
-    double *mat = (double*)(SUBGRID_CD);
+    double *mat = (double*)(SUBGRID_D);
 
-    fprintf(stderr, "[Process %d] kernel WRITE_BACK (%d %d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, c, d, mat[0]);
+    fprintf(stderr, "[Process %d] kernel WRITE_BACK (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, d, mat[0]);
 END
 
 extern "C" %{
@@ -544,8 +515,8 @@ int main(int argc, char *argv[])
 
     struct timeval begin_initialization, end_initialization, end_execution;
 
-    parsec_arena_datatype_t subgrid_cd_arena_datatype;
-    parsec_datatype_t subgrid_cd_datatype;
+    parsec_arena_datatype_t subgrid_d_arena_datatype;
+    parsec_datatype_t subgrid_d_datatype;
 
     parsec_arena_datatype_t vertical_slice_arena_datatype;
     parsec_datatype_t vertical_slice_datatype;
@@ -589,17 +560,17 @@ int main(int argc, char *argv[])
     int CuHI = -1;
 #endif
 
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &subgrid_cd_datatype);
-    parsec_add2arena_rect(&subgrid_cd_arena_datatype, subgrid_cd_datatype,
-                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.subgridTrueSize[0]);
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &subgrid_d_datatype);
+    parsec_add2arena_rect(&subgrid_d_arena_datatype, subgrid_d_datatype,
+                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &vertical_slice_datatype);
     parsec_add2arena_rect(&vertical_slice_arena_datatype, vertical_slice_datatype,
-                                 grid.subgridTrueSize[0], grid.overlapSize[1], grid.subgridTrueSize[0]);
+                                 grid.subgridTrueSize[0], grid.overlapSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
 
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &horizontal_slice_datatype);
     parsec_add2arena_rect(&horizontal_slice_arena_datatype, horizontal_slice_datatype,
-                                 grid.overlapSize[0], grid.subgridTrueSize[1], MAX(grid.overlapSize[0], grid.subgridTrueSize[1]));
+                                 grid.overlapSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber, grid.overlapSize[0]);
 
     gettimeofday(&begin_initialization, 0);
 
@@ -613,10 +584,10 @@ int main(int argc, char *argv[])
                                 CuHI);
 
     assert( NULL != tp );
-    tp->arenas_datatypes[PARSEC_LBM_SUBGRID_CD_ADT_IDX] = subgrid_cd_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_SUBGRID_D_ADT_IDX] = subgrid_d_arena_datatype;
     tp->arenas_datatypes[PARSEC_LBM_VERTICAL_SLICE_ADT_IDX] = vertical_slice_arena_datatype;
     tp->arenas_datatypes[PARSEC_LBM_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
-    PARSEC_OBJ_RETAIN(subgrid_cd_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(subgrid_d_arena_datatype.arena);
     PARSEC_OBJ_RETAIN(vertical_slice_arena_datatype.arena);
     PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
 
@@ -630,9 +601,9 @@ int main(int argc, char *argv[])
     PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
 
     if( rank == 0 ) {
-        for(int cd=0; cd<grid.conservativesNumber*grid.directionsNumber; cd++) {
-            double *mat = &(((double*)grid.desc.grid)[cd*grid.subgridNumber[0]*grid.subgridNumber[1]*grid.subgridNumber[2]]);
-            printf("for cd=%d, final : %f\n", cd, *mat);
+        for(int d=0; d<grid.conservativesNumber*grid.directionsNumber; d++) {
+            double *mat = &(((double*)grid.desc.grid)[d*grid.subgridNumber[0]*grid.subgridNumber[1]]);
+            printf("for d=%d, final : %f\n", d, *mat);
         }
     }
 
