@@ -187,6 +187,11 @@ Grid newGrid(int rank, int nodes)
 	return grid;
 }
 
+double get_dt(Grid grid)
+{
+    double delta_x = grid.physicalSize[0] / (double)grid.size[0];
+    return CFL * delta_x / (ALPHA > BETA ? ALPHA : BETA);
+}
 
 typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
                             cublasOperation_t transa, cublasOperation_t transb,
@@ -290,7 +295,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 
             sprintf(buffer, "%.15f\n", value);
             MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
-		}
+        }
 	}
 
 	MPI_File_close(&gplt);
@@ -323,12 +328,13 @@ subgrid_x = 0 .. subgrid_number_x-1
 subgrid_y = 0 .. subgrid_number_y-1
 d = 0 .. directions_number-1
 
-: descGridD(subgrid_x, subgrid_y, 0)
+: descGridD(subgrid_x, subgrid_y, d)
 
 
-RW SUBGRID_D <- descGridD(subgrid_x, subgrid_y, d) [type_data="SUBGRID_D"]
+RW SUBGRID_D
+    <- descGridD(subgrid_x, subgrid_y, d) [type_data="SUBGRID_D"]
     -> SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_D"]
-    -> SUBGRID_TO_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, 0) [type_data="SUBGRID_D"]
+    -> SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, 0) [type_data="SUBGRID_D"]
 
 
 BODY
@@ -396,8 +402,10 @@ READ SUBGRID_FROM[d = 0..directions_number-1]
         : SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D"]
         
 WRITE SUBGRID_TO[d = 0..directions_number-1]
-    -> ((s==number_of_steps-1 || s%save_interval==0) && s != 0)
-        ? SUBGRID_TO_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, s/save_interval) [type="SUBGRID_D"]
+    -> ((s==number_of_steps-1 || s%save_interval==save_interval-1) && s != 0 && s != number_of_steps-1)
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (s+1)/save_interval) [type="SUBGRID_D"]
+    -> (s==number_of_steps-1)
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (number_of_steps+1)/save_interval) [type="SUBGRID_D"]
     -> (s!=number_of_steps-1)
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s+1)
         : SUBGRID_D_OUT writeBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
@@ -497,34 +505,56 @@ s = 0 .. (number_of_steps+1)/save_interval // Number of saved steps
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-RW SUBGRID_TO_SAVE_REDUCE
-    <- (s==(number_of_steps+1)/save_interval)
-        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1)
+READ SUBGRID_SAVE_REDUCE
+    <- (s==(number_of_steps+1)/save_interval && s!=0)
+        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D"]
     <- (s==0) ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
-    <- (s!=0 && s!=(number_of_steps+1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s*save_interval-1) [type="SUBGRID_D"]
-    -> SUBGRID_TO_SAVE[d_it = d] save_file(subgrid_x, subgrid_y, s) [type="SUBGRID_D"]
+    <- (s!=0 && s!=(number_of_steps+1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D"]
+
+RW SUBGRID_SAVE_REDUCED
+    <- (subgrid_x==0 && subgrid_y==0 && d==0)
+        ? NEW [type="SAVE_GRID"]
+    <- (subgrid_x==0 && subgrid_y==0 && d!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID"]
+    <- (subgrid_x==0 && subgrid_y!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_number_y-1, d, s) [type="SAVE_GRID"]
+    <- (subgrid_x!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
+        ? SUBGRID_TO_SAVE save_file(s) [type="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y != subgrid_number_y-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, subgrid_y+1, d, s) [type="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d != directions_number-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, 0, d+1, s) [type="SAVE_GRID"]
+    -> (subgrid_x != subgrid_number_x-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x+1, subgrid_y, d, s) [type="SAVE_GRID"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel save_file_reduce CPU (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
 END
 
-save_file(subgrid_x, subgrid_y, s)
+save_file(s)
 
-subgrid_x = 0 .. subgrid_number_x-1
-subgrid_y = 0 .. subgrid_number_y-1
 s = 0 .. (number_of_steps+1)/save_interval // Number of saved steps
 
-: descGridD(subgrid_x, subgrid_y, 0)
+: descGridD((s*13)%subgrid_number_x, (s*17)%subgrid_number_y, 0)
 
-READ SUBGRID_TO_SAVE[d = 0 .. directions_number-1]
-    <- SUBGRID_TO_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, s) [type="SUBGRID_D"]
+READ SUBGRID_TO_SAVE
+    <- SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, directions_number-1, s) [type="SAVE_GRID"]
 
 
 BODY
     double *mat = (double*)(SUBGRID_TO_SAVE);
+    char current_filename[256];
+    double dt = get_dt(gridParameters);
+    double t = (s+1)*dt;
 
-    fprintf(stderr, "[Process %d] kernel save_file (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, s, mat[0]);
+    fprintf(stderr, "[Process %d] kernel save_file (%d) (first value = %f)\n",
+               rank, s, mat[0]);
+
+    sprintf(current_filename, "data_t=%.4f.dat", t);
+    //d2q9_view_python(current_filename, gridParameters, mat);
 END
 
 writeBack(subgrid_x, subgrid_y, d)
@@ -566,6 +596,9 @@ int main(int argc, char *argv[])
     parsec_arena_datatype_t horizontal_slice_arena_datatype;
     parsec_datatype_t horizontal_slice_datatype;
 
+    parsec_arena_datatype_t save_grid_arena_datatype;
+    parsec_datatype_t save_grid_datatype;
+
 #if defined(PARSEC_HAVE_MPI)
     {
         int provided;
@@ -582,7 +615,7 @@ int main(int argc, char *argv[])
     Grid grid = newGrid(rank, world);
 
     double delta_x = grid.physicalSize[0] / (double)grid.size[0];
-    double dt = CFL * delta_x / (ALPHA > BETA ? ALPHA : BETA);
+    double dt = get_dt(grid);
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
@@ -620,6 +653,10 @@ int main(int argc, char *argv[])
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &horizontal_slice_datatype);
     parsec_add2arena_rect(&horizontal_slice_arena_datatype, horizontal_slice_datatype,
                                  grid.overlapSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber, grid.overlapSize[0]);
+    
+    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &save_grid_datatype);
+    parsec_add2arena_rect(&save_grid_arena_datatype, save_grid_datatype,
+                                 grid.sizeOfSavedData[0], grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber, grid.sizeOfSavedData[0]);
 
     gettimeofday(&begin_initialization, 0);
 
@@ -637,9 +674,11 @@ int main(int argc, char *argv[])
     tp->arenas_datatypes[PARSEC_LBM_SUBGRID_D_ADT_IDX] = subgrid_d_arena_datatype;
     tp->arenas_datatypes[PARSEC_LBM_VERTICAL_SLICE_ADT_IDX] = vertical_slice_arena_datatype;
     tp->arenas_datatypes[PARSEC_LBM_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_SAVE_GRID_ADT_IDX] = save_grid_arena_datatype;
     PARSEC_OBJ_RETAIN(subgrid_d_arena_datatype.arena);
     PARSEC_OBJ_RETAIN(vertical_slice_arena_datatype.arena);
     PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(save_grid_arena_datatype.arena);
 
     rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
     PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
