@@ -190,7 +190,6 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 
 	for (size_t x = 0; x < grid.sizeOfSavedData[0]; x++)
 	{
-		//fprintf(gplt, "%f\n", x * dx + grid.physicalMinCoords[0]);
         sprintf(buffer, "%f\n", x * dx + grid.physicalMinCoords[0]);
         MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
 	}
@@ -199,11 +198,9 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
     MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
 	for (size_t y = 0; y < grid.sizeOfSavedData[1]; y++)
 	{
-		//fprintf(gplt, "%f\n", y * dy + grid.physicalMinCoords[1]);
         sprintf(buffer, "%f\n", y * dy + grid.physicalMinCoords[1]);
         MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
 	}
-	//fprintf(gplt, "\n");
     sprintf(buffer, "\n");
     MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
 
@@ -229,6 +226,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
             // set value to whatever function of the cd vector you want to plot
 
             sprintf(buffer, "%.15f\n", value);
+            //snprintf(buffer, 256, "0.0\n", 0);
             MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
         }
 	}
@@ -275,7 +273,15 @@ RW SUBGRID_D
 BODY [type=CUDA]
     double *subgrid = SUBGRID_D;
 
+    fprintf(stderr, "[Process %d] FillGrid CPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+
     d2q9_initial_value_d_caller(gridParameters, subgrid, subgrid_x, subgrid_y, d);
+END
+
+BODY
+    double *subgrid = SUBGRID_D;
+
+    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
 END
 
 // BODY
@@ -485,14 +491,21 @@ READ SUBGRID_TO_SAVE
     <- SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, directions_number-1, s) [type="SAVE_GRID"]
 
 
+BODY [type=CUDA]
+    fprintf(stderr, "[Process %d] kernel save_file GPU (%d)\n",
+               rank, s);
+END
+
 BODY
     double *mat = (double*)(SUBGRID_TO_SAVE);
     char current_filename[256];
     double dt = get_dt(gridParameters);
     double t = (s)*dt;
 
-    fprintf(stderr, "[Process %d] kernel save_file (%d) (first value = %f)\n",
-               rank, s, mat[0]);
+    // fprintf(stderr, "[Process %d] kernel save_file CPU (%d) (first value = %f)\n",
+    //            rank, s, mat[0]);
+    fprintf(stderr, "[Process %d] kernel save_file CPU (%d)\n",
+                rank, s);
 
     sprintf(current_filename, "data_t=%.4f.dat", t);
     d2q9_view_python(current_filename, gridParameters, mat);
@@ -513,7 +526,7 @@ RW SUBGRID_D_OUT
 BODY
     double *mat = (double*)(SUBGRID_D_OUT);
 
-    fprintf(stderr, "[Process %d] kernel writeBack (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, d, mat[0]);
+    //fprintf(stderr, "[Process %d] kernel writeBack (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, d, mat[0]);
 END
 
 extern "C" %{
@@ -560,8 +573,8 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 27;
-    int save_interval = 4;
+    number_of_steps = 5;
+    int save_interval = 3;
 
 
     // Ensure that the configuration is valid
@@ -636,7 +649,7 @@ int main(int argc, char *argv[])
                 for(int d=0; d<grid.directionsNumber; d++) {
                     const int size_of_one_tile = grid.subgridTrueSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber;
                     double *mat = &(((double*)((parsec_multidimensional_grid_t*)grid.desc)->grid)[size_of_one_tile * (tile_x + tile_y * grid.subgridNumber[0])]);
-                    printf("for tile (%d,%d) and d=%d, first value at the end : %f\n", tile_x, tile_y, d, mat[0]);
+                    //printf("for tile (%d,%d) and d=%d, first value at the end : %f\n", tile_x, tile_y, d, mat[0]);
                 }
             }
         }

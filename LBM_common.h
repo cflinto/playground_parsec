@@ -69,7 +69,7 @@ typedef struct Grid
 	int subgridsNumber;
 	int currentSubgrid;
 
-	double mass[MAX_SUBGRIDS];
+	//double mass[MAX_SUBGRIDS];
 
     // physical coords of the problem, used by the physical model
 	double physicalMinCoords[DIMENSIONS_NUMBER];

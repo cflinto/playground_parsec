@@ -3,7 +3,7 @@
 NVCC = nvcc
 
 # Set compiler flags and paths
-CFLAGS = `pkg-config --cflags parsec`
+CFLAGS = -g `pkg-config --cflags parsec`
 LDFLAGS = `pkg-config --libs parsec`
 PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):/usr/local/lib/pkgconfig
 
