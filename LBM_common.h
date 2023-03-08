@@ -20,7 +20,7 @@
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (8)
+#define PROBLEM_SIZE_X (16)
 #define PROBLEM_SIZE_Y (8)
 #define PROBLEM_SIZE_Z (8)
 
@@ -81,6 +81,7 @@ typedef struct Grid
 
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
+void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
 
 
 #endif // LBM_COMMON_H_INCLUDED

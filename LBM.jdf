@@ -44,13 +44,15 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 #include "LBM.cuh"
 #include "LBM_common.h"
 
+#define PARSEC_DEBUG_PARANOID 0
+
 Grid newGrid(int rank, int nodes)
 {
 	Grid grid;
 
 	grid.size[0] = PROBLEM_SIZE_X;
 	grid.size[1] = PROBLEM_SIZE_Y;
-    grid.conservativesNumber = 2;
+    grid.conservativesNumber = 3;
     grid.directionsNumber = 2;
 
 	grid.subgridNumber[0] = 2;
@@ -265,9 +267,9 @@ d = 0 .. directions_number-1
 
 
 RW SUBGRID_D
-    <- descGridD(subgrid_x, subgrid_y, d) [type_data="SUBGRID_D"]
-    -> SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, 0) [type_data="SUBGRID_D"]
-    -> SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, 0) [type_data="SUBGRID_D"]
+    <- descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, 0) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, 0) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 
 BODY [type=CUDA]
@@ -309,53 +311,53 @@ s = 0 .. number_of_steps-1
 
 RW INTERFACE_DOWN
     <- (s!=0 && subgrid_y>0 && s%overlap_y==0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s/overlap_y-1) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     <- (subgrid_y>0 && s%overlap_y==overlap_y-1)
         ? NEW
-        : NULL [type="VERTICAL_SLICE"]
+        : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y>0 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s/overlap_y) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW INTERFACE_UP
     <- (s!=0 && subgrid_y<subgrid_number_y-1 && s%overlap_y==0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s/overlap_y-1) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     <- (subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
         ? NEW
-        : NULL [type="VERTICAL_SLICE"]
+        : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s/overlap_y) [type="VERTICAL_SLICE"]
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW INTERFACE_LEFT
     <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
     <- (subgrid_x>0 && s%overlap_x==overlap_x-1)
         ? NEW
-        : NULL [type="HORIZONTAL_SLICE"]
+        : NULL [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 1, s/overlap_x) [type="HORIZONTAL_SLICE"]
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 1, s/overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 RW INTERFACE_RIGHT
     <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s/overlap_x-1) [type="HORIZONTAL_SLICE"]
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s/overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
     <- (subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
         ? NEW
-        : NULL [type="HORIZONTAL_SLICE"]
+        : NULL [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
     -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s/overlap_x) [type="HORIZONTAL_SLICE"]
+        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s/overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 READ SUBGRID_FROM[d = 0..directions_number-1]
     <- (s==0)
         ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d)
-        : SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D"]
+        : SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
         
 WRITE SUBGRID_TO[d = 0..directions_number-1]
     -> (s%save_interval==save_interval-1 && s != number_of_steps-1)
-        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (s+1)/save_interval) [type="SUBGRID_D"]
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (s+1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     -> (s==number_of_steps-1)
-        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D"]
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     -> (s!=number_of_steps-1)
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s+1)
-        : SUBGRID_D_OUT writeBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
+        : SUBGRID_D_OUT writeBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 // BODY [type=CUDA]
 //     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
@@ -413,10 +415,10 @@ s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
 : descGridD(x, y, 0)
 
 RW VERTICAL_INTERFACE
-    <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
-    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE"]
-    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
-    -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE"]
+    <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
@@ -433,10 +435,10 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 : descGridD(x, y, 0)
 
 RW HORIZONTAL_INTERFACE
-    <- (side==0) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
-    <- (side==1) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE"]
-    -> (side==0) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
-    -> (side==1) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE"]
+    <- (side==0) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
@@ -454,32 +456,43 @@ s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved step
 
 READ SUBGRID_SAVE_REDUCE
     <- (s==(number_of_steps+save_interval-1)/save_interval && s!=0)
-        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D"]
-    <- (s==0) ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
-    <- (s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D"]
+        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==0) ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d==0)
-        ? NEW [type="SAVE_GRID"]
+        ? NEW [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x==0 && subgrid_y!=0)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_number_y-1, d, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_number_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x!=0)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
-        ? SUBGRID_TO_SAVE save_file(s) [type="SAVE_GRID"]
+        ? SUBGRID_TO_SAVE save_file(s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y != subgrid_number_y-1)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, subgrid_y+1, d, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, subgrid_y+1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d != directions_number-1)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, 0, d+1, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, 0, d+1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x != subgrid_number_x-1)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x+1, subgrid_y, d, s) [type="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x+1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
 
-BODY
-    fprintf(stderr, "[Process %d] kernel save_file_reduce CPU (%d %d %d %d)\n",
+BODY [type=CUDA]
+    double *subgrid_reduced = SUBGRID_SAVE_REDUCED;
+    double *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
+
+    fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
+
+    //d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
 END
+
+// BODY
+//     fprintf(stderr, "[Process %d] kernel save_file_reduce CPU (%d %d %d %d)\n",
+//                rank, subgrid_x, subgrid_y, d, s);
+//     assert(0);
+// END
 
 save_file(s)
 
@@ -488,13 +501,13 @@ s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved step
 : descGridD((s*13)%subgrid_number_x, (s*17)%subgrid_number_y, 0)
 
 READ SUBGRID_TO_SAVE
-    <- SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, directions_number-1, s) [type="SAVE_GRID"]
+    <- SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, directions_number-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
 
 
-BODY [type=CUDA]
-    fprintf(stderr, "[Process %d] kernel save_file GPU (%d)\n",
-               rank, s);
-END
+// BODY [type=CUDA]
+//     fprintf(stderr, "[Process %d] kernel save_file GPU (%d)\n",
+//                rank, s);
+// END
 
 BODY
     double *mat = (double*)(SUBGRID_TO_SAVE);
@@ -508,7 +521,7 @@ BODY
                 rank, s);
 
     sprintf(current_filename, "data_t=%.4f.dat", t);
-    d2q9_view_python(current_filename, gridParameters, mat);
+    //d2q9_view_python(current_filename, gridParameters, mat);
 END
 
 writeBack(subgrid_x, subgrid_y, d)
@@ -520,8 +533,8 @@ d = 0 .. gridParameters.directionsNumber-1
 : descGridD(subgrid_x, subgrid_y, d)
 
 RW SUBGRID_D_OUT
-    <- SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D"]
-    -> descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D"]
+    <- SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY
     double *mat = (double*)(SUBGRID_D_OUT);
