@@ -108,11 +108,12 @@ Grid newGrid(int rank, int nodes)
                             nodes, rank,
                             DIMENSIONS_NUMBER+1, DIMENSIONS_NUMBER,
                             grid.subgridNumber[0], grid.subgridNumber[1], grid.directionsNumber,
-                            grid.subgridTrueSize[0], grid.subgridTrueSize[1],
+                            grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber,
                             1, 1, 1); // TODO, maybe the stencil should be NxNxgrid.conservativesNumberxgrid.directionsNumber
     ((parsec_multidimensional_grid_t*)grid.desc)->grid = parsec_data_allocate((size_t)((parsec_multidimensional_grid_t*)grid.desc)->nb_local_tiles *
                                     (size_t)((parsec_multidimensional_grid_t*)grid.desc)->bsiz *
                                     (size_t)parsec_datadist_getsizeoftype(((parsec_multidimensional_grid_t*)grid.desc)->mtype));
+
     assert(((parsec_multidimensional_grid_t*)grid.desc)->grid != NULL);
 
     parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc, "grid.desc[");
@@ -485,7 +486,7 @@ BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
 
-    //d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
+    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
 END
 
 // BODY
@@ -521,7 +522,7 @@ BODY
                 rank, s);
 
     sprintf(current_filename, "data_t=%.4f.dat", t);
-    //d2q9_view_python(current_filename, gridParameters, mat);
+    d2q9_view_python(current_filename, gridParameters, mat);
 END
 
 writeBack(subgrid_x, subgrid_y, d)
@@ -624,6 +625,15 @@ int main(int argc, char *argv[])
     parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &save_grid_datatype);
     parsec_add2arena_rect(&save_grid_arena_datatype, save_grid_datatype,
                                  grid.sizeOfSavedData[0], grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber, grid.sizeOfSavedData[0]);
+
+/*
+    printf("sizes:\n");
+    printf("subgrid_d_arena_datatype = %d\n", grid.subgridTrueSize[0] * grid.subgridTrueSize[1]*grid.conservativesNumber);
+    printf("vertical_slice_arena_datatype = %d\n", grid.subgridTrueSize[0] * grid.overlapSize[1]*grid.conservativesNumber);
+    printf("horizontal_slice_arena_datatype = %d\n", grid.overlapSize[0] * grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber);
+    printf("save_grid_arena_datatype = %d\n", grid.sizeOfSavedData[0] * grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber);
+exit(1);
+*/
 
     gettimeofday(&begin_initialization, 0);
 
