@@ -44,8 +44,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 #include "LBM.cuh"
 #include "LBM_common.h"
 
-#define PARSEC_DEBUG_PARANOID 0
-
 Grid newGrid(int rank, int nodes)
 {
 	Grid grid;
@@ -351,7 +349,8 @@ READ SUBGRID_FROM[d = 0..directions_number-1]
         ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d)
         : SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
         
-WRITE SUBGRID_TO[d = 0..directions_number-1]
+RW SUBGRID_TO[d = 0..directions_number-1]
+    <- NEW [type="SUBGRID_D"]
     -> (s%save_interval==save_interval-1 && s != number_of_steps-1)
         ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (s+1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     -> (s==number_of_steps-1)
@@ -360,29 +359,7 @@ WRITE SUBGRID_TO[d = 0..directions_number-1]
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s+1)
         : SUBGRID_D_OUT writeBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
-// BODY [type=CUDA]
-//     double *subgrid[gridParameters.conservativesNumber][gridParameters.directionsNumber];
-//     subgrid[0][0] = GRID_CD[0];
-//     subgrid[1][0] = GRID_CD[1];
-//     subgrid[2][0] = GRID_CD[2];
-//     subgrid[0][1] = GRID_CD[3];
-//     subgrid[1][1] = GRID_CD[4];
-//     subgrid[2][1] = GRID_CD[5];
-
-//     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d %d) grid|0][0]=%p, grid[1][0]=%p, grid[2][0]=%p, grid[0][1]=%p, grid[1][1]=%p, grid[2][1]=%p\n",
-//                 rank, x, y, z, s, subgrid[0][0], subgrid[1][0], subgrid[2][0], subgrid[0][1], subgrid[1][1], subgrid[2][1]);
-
-//     /*for(int i=0;i<tile_size_x*tile_size_y*tile_size_z;++i)
-//     {
-//         for(int cd=0;cd<gridParameters.conservativesNumber*gridParameters.directionsNumber;++cd)
-//         {
-//             double *mat = GRID_CD[cd];
-//             mat[i] += 1;
-//         }
-//     }*/
-// END
-
-BODY
+BODY [type=CUDA]
     double *subgrid_FROM_D[gridParameters.directionsNumber];
     double *subgrid_TO_D[gridParameters.directionsNumber];
 
@@ -392,18 +369,10 @@ BODY
         subgrid_TO_D[d] = SUBGRID_TO[d];
     }
 
-    fprintf(stderr, "[Process %d] kernel LBM_STEP CPU (%d %d %d)\n",
+    fprintf(stderr, "[Process %d] kernel LBM_STEP GPU (%d %d %d)\n",
                rank, subgrid_x, subgrid_y, s);
 
-    for(int i=0;i<subgrid_size_x*subgrid_size_y*conservatives_number;++i)
-    {
-        for(int d=0;d<gridParameters.directionsNumber;++d)
-        {
-            double *mat = subgrid_FROM_D[d];
-            subgrid_TO_D[d][i] = mat[i] + 1;
-        }
-    }
-
+    //d2q9_LBM_step_caller(gridParameters, subgrid_FROM_D, subgrid_TO_D, subgrid_x, subgrid_y);
 END
 
 vertical_interface(x, y, side, s)

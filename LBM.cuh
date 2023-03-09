@@ -14,4 +14,6 @@ __global__ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, i
 
 __global__ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
 
+__global__ void d2q9_LBM_step(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY);
+
 #endif // LBM_CUH_INCLUDED

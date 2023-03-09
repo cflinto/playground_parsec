@@ -12,6 +12,11 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
 }
 
+void d2q9_LBM_step_caller(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY)
+{
+    d2q9_LBM_step<<<256, 256>>>(grid, subgrid_FROM_D, subgrid_TO_D, subgridX, subgridY);
+}
+
 __device__
 double d2q9_t0(double x, double y, int c, int d)
 {
@@ -35,6 +40,7 @@ double d2q9_t0(double x, double y, int c, int d)
         return rho * v;
     else
         assert(false);
+        return 0;
 
     // w[0] = rho;
     // w[1] = rho * u;
@@ -118,4 +124,10 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
 
         reduced_subgrid[reduced_subgrid_id] = average;
     }
+}
+
+__global__
+void d2q9_LBM_step(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY)
+{
+
 }

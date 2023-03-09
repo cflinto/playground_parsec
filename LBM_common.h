@@ -82,6 +82,7 @@ typedef struct Grid
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
+void d2q9_LBM_step_caller(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY);
 
 
 #endif // LBM_COMMON_H_INCLUDED
