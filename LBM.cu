@@ -13,7 +13,7 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
 }
 
 __device__
-void d2q9_t0(double *w, double x, double y, int d)
+double d2q9_t0(double x, double y, int c, int d)
 {
     (void)d; // same for all directions
 
@@ -24,12 +24,21 @@ void d2q9_t0(double *w, double x, double y, int d)
 
     if ((x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS) {
         u = 0;
-        // printf("x=%f y=%f\n",x,y);
+        v = 0;
     }
 
-    w[0] = rho;
-    w[1] = rho * u;
-    w[2] = rho * v;
+    if(c == 0)
+        return rho;
+    else if(c == 1)
+        return rho * u;
+    else if(c == 2)
+        return rho * v;
+    else
+        assert(false);
+
+    // w[0] = rho;
+    // w[1] = rho * u;
+    // w[2] = rho * v;
 }
 
 
@@ -58,9 +67,7 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
         double xg = grid.physicalMinCoords[0] + (((double)xgInt + 0.5) * grid.physicalSize[0] / (double)grid.size[0]);
         double yg = grid.physicalMinCoords[1] + (((double)ygInt + 0.5) * grid.physicalSize[1] / (double)grid.size[1]);
 
-        double *w = &subgrid[id];
-
-        d2q9_t0(w, xg, yg, d);
+        subgrid[id] = d2q9_t0(xg, yg, c, d);
     }
 }
 

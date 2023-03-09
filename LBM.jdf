@@ -225,7 +225,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
                 }
             }
 
-			double value = cd_vector[0][0];
+			double value = cd_vector[0][2] + cd_vector[1][2];
             // set value to whatever function of the cd vector you want to plot
 
             sprintf(buffer, "%.15f\n", value);
@@ -588,7 +588,7 @@ int main(int argc, char *argv[])
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
     number_of_steps = 5;
-    int save_interval = 3;
+    int save_interval = 1;
 
 
     // Ensure that the configuration is valid
