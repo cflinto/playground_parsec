@@ -81,7 +81,7 @@ Grid newGrid(int rank, int nodes)
 
 	grid.subgridTrueSize[0] = grid.subgridLogicalSize[0] + 2 * grid.overlapSize[0];
 	grid.subgridTrueSize[1] = grid.subgridLogicalSize[1] + 2 * grid.overlapSize[1];
-	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1]);
+	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1] * grid.conservativesNumber);
 	grid.subgridsNumber = grid.subgridNumber[0] * grid.subgridNumber[1];
 
     grid.sizeOfSavedData[0] = SAVED_DATA_SIZE_X;
@@ -122,7 +122,7 @@ Grid newGrid(int rank, int nodes)
 double get_dt(Grid grid)
 {
     double delta_x = grid.physicalSize[0] / (double)grid.size[0];
-    return CFL * delta_x / (ALPHA > BETA ? ALPHA : BETA);
+    return CFL * delta_x / MAXIMUM_VELOCITY;
 }
 
 typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
@@ -223,7 +223,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
                 }
             }
 
-			double value = cd_vector[0][2] + cd_vector[1][2];
+			double value = cd_vector[0][0] + cd_vector[0][1] + cd_vector[0][2] + cd_vector[1][0] + cd_vector[1][1] + cd_vector[1][2] + cd_vector[2][0] + cd_vector[2][1] + cd_vector[2][2];
             // set value to whatever function of the cd vector you want to plot
 
             sprintf(buffer, "%.15f\n", value);
@@ -372,7 +372,7 @@ BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel LBM_STEP GPU (%d %d %d)\n",
                rank, subgrid_x, subgrid_y, s);
 
-    //d2q9_LBM_step_caller(gridParameters, subgrid_FROM_D, subgrid_TO_D, subgrid_x, subgrid_y);
+    d2q9_LBM_step_caller(gridParameters, subgrid_FROM_D, subgrid_TO_D, subgrid_x, subgrid_y);
 END
 
 vertical_interface(x, y, side, s)

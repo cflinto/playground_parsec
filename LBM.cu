@@ -12,9 +12,18 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
 }
 
-void d2q9_LBM_step_caller(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY)
+void d2q9_LBM_step_caller(Grid grid, double **subgrid_FROM_D, double **subgrid_TO_D, int subgridX, int subgridY)
 {
-    d2q9_LBM_step<<<256, 256>>>(grid, subgrid_FROM_D, subgrid_TO_D, subgridX, subgridY);
+    // wrap the arrays
+    SubgridArray subgrid_FROM_D_wrapped;
+    SubgridArray subgrid_TO_D_wrapped;
+    for(int d=0;d<grid.directionsNumber;d++)
+    {
+        subgrid_FROM_D_wrapped.subgrid[d] = subgrid_FROM_D[d];
+        subgrid_TO_D_wrapped.subgrid[d] = subgrid_TO_D[d];
+    }
+
+    d2q9_LBM_step<<<256, 256>>>(grid, subgrid_FROM_D_wrapped, subgrid_TO_D_wrapped, subgridX, subgridY);
 }
 
 __device__
@@ -266,11 +275,106 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
 
 
 
+//   lbm->vel[0][0] = 0;
+//   lbm->vel[0][1] = 0;
+
+//   lbm->vel[1][0] = 1;
+//   lbm->vel[1][1] = 0;
+
+//   lbm->vel[2][0] = 0;
+//   lbm->vel[2][1] = 1;
+
+//   lbm->vel[3][0] = -1;
+//   lbm->vel[3][1] = 0;
+
+//   lbm->vel[4][0] = 0;
+//   lbm->vel[4][1] = -1;
+
+//   lbm->vel[5][0] = 1;
+//   lbm->vel[5][1] = 1;
+
+//   lbm->vel[6][0] = -1;
+//   lbm->vel[6][1] = 1;
+
+//   lbm->vel[7][0] = -1;
+//   lbm->vel[7][1] = -1;
+
+//   lbm->vel[8][0] = 1;
+//   lbm->vel[8][1] = -1;
+
+
+__device__
+int get_dir(int i, int j)
+{
+    const int dirs[9][2] = {
+        {0, 0},
+        {1, 0},
+        {0, 1},
+        {-1, 0},
+        {0, -1},
+        {1, 1},
+        {-1, 1},
+        {-1, -1},
+        {1, -1}
+    };
+
+    return dirs[i][j];
+}
+
+
+__device__
+void fluid_to_kin(const double *w, double *f)
+{
+    static const double c2 = 1. / 3.;
+    double dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
+
+    l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
+    double l2_ov_c2 = l2 / c2;
+
+    l4 = l2 * l2;
+    c4 = c2 * c2;
+
+    vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
+    dotvel = sqrt(l2) * (get_dir(0,0) * w[1] + get_dir(0,1) * w[2]) / w[0];
+
+    f[0] = (4. / 9.) * w[0] *
+    (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+    l2 / (2. * c2) * vel2);
+
+    for (size_t i = 1; i < 5; i++) {
+        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        f[i] = (1. / 9.) * w[0] *
+        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+        l2 / (2. * c2) * vel2);
+    }
+    for (size_t i = 5; i < 9; i++) {
+        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        f[i] = (1. / 36.) * w[0] *
+        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+        l2 / (2. * c2) * vel2);
+    }
+}
+
+__device__
+void kin_to_fluid(const double *f, double *w)
+{
+    w[0] = 0;
+    w[1] = 0;
+    w[2] = 0;
+
+    for (int i = 0; i < 9; i++) {
+        w[0] = w[0] + f[i];
+        w[1] = w[1] + MAXIMUM_VELOCITY * get_dir(i,0) * f[i];
+        w[2] = w[2] + MAXIMUM_VELOCITY * get_dir(i,1) * f[i];
+    }
+}
+
+
 // similar to D2Q9_step
 __global__
-void d2q9_LBM_step(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY)
+void d2q9_LBM_step(Grid grid, SubgridArray subgrid_FROM_D, SubgridArray subgrid_TO_D, int subgridX, int subgridY)
 {
-    /*int stride = blockDim.x * gridDim.x;
+    int stride = blockDim.x * gridDim.x;
 
     int cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1];
 
@@ -284,6 +388,26 @@ void d2q9_LBM_step(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)
             continue;
         }
 
+        double f[3][3];
 
-    }*/
+        for(int d=0; d<grid.directionsNumber; d++)
+        {
+            double *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
+            int target_true_x = subgrid_true_x - get_dir(d,0);
+            int target_true_y = subgrid_true_y - get_dir(d,1);
+            for(int c=0; c<grid.conservativesNumber; c++)
+            {
+                f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
+            }
+        }
+
+        for(int d=0; d<grid.directionsNumber; d++)
+        {
+            double *target_TO_subgrid = subgrid_TO_D.subgrid[d];
+            for(int c=0; c<grid.conservativesNumber; c++)
+            {
+                target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
+            }
+        }
+    }
 }

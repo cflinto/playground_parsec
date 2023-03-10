@@ -6,8 +6,9 @@
 #define EPSILON 0.000000001
 
 #define CFL 0.45
-#define ALPHA 0.9 // TODO change to match cylinder test case
-#define BETA 0.9
+// #define ALPHA 0.9 // TODO change to match cylinder test case
+// #define BETA 0.9
+#define MAXIMUM_VELOCITY 1.0
 
 #define CYLINDER_RADIUS 0.3
 #define CYLINDER_CENTER_X 0.0
@@ -78,11 +79,15 @@ typedef struct Grid
     void *desc;
 } Grid;
 
+typedef struct SubgridArray
+{
+    double *subgrid[3];
+} SubgridArray;
 
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
-void d2q9_LBM_step_caller(Grid grid, double (*subgrid_FROM_D)[], double (*subgrid_TO_D)[], int subgridX, int subgridY);
+void d2q9_LBM_step_caller(Grid grid, double **subgrid_FROM_D, double **subgrid_TO_D, int subgridX, int subgridY);
 
 
 #endif // LBM_COMMON_H_INCLUDED
