@@ -10,6 +10,8 @@
 // #define BETA 0.9
 #define MAXIMUM_VELOCITY 1.0
 
+#define OMEGA_RELAX 1.9
+
 #define CYLINDER_RADIUS 0.3
 #define CYLINDER_CENTER_X 0.0
 #define CYLINDER_CENTER_Y 0.0
@@ -87,7 +89,16 @@ typedef struct SubgridArray
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
-void d2q9_LBM_step_caller(Grid grid, double **subgrid_FROM_D, double **subgrid_TO_D, int subgridX, int subgridY);
+void d2q9_LBM_step_caller(Grid grid,
+                double **subgrid_FROM_D,
+                double **subgrid_TO_D,
+                bool has_from_interface_horizontal,
+                bool has_from_interface_vertical,
+                bool has_to_interface_horizontal,
+                bool has_to_interface_vertical,
+                double *interface_left, double *interface_right,
+                double *interface_down, double *interface_up,
+                int subgridX, int subgridY);
 
 
 #endif // LBM_COMMON_H_INCLUDED

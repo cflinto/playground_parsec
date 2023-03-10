@@ -12,7 +12,16 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
 }
 
-void d2q9_LBM_step_caller(Grid grid, double **subgrid_FROM_D, double **subgrid_TO_D, int subgridX, int subgridY)
+void d2q9_LBM_step_caller(Grid grid,
+                double **subgrid_FROM_D,
+                double **subgrid_TO_D,
+                bool has_from_interface_horizontal,
+                bool has_from_interface_vertical,
+                bool has_to_interface_horizontal,
+                bool has_to_interface_vertical,
+                double *interface_left, double *interface_right,
+                double *interface_down, double *interface_up,
+                int subgridX, int subgridY)
 {
     // wrap the arrays
     SubgridArray subgrid_FROM_D_wrapped;
@@ -23,14 +32,92 @@ void d2q9_LBM_step_caller(Grid grid, double **subgrid_FROM_D, double **subgrid_T
         subgrid_TO_D_wrapped.subgrid[d] = subgrid_TO_D[d];
     }
 
-    d2q9_LBM_step<<<256, 256>>>(grid, subgrid_FROM_D_wrapped, subgrid_TO_D_wrapped, subgridX, subgridY);
+    d2q9_LBM_step<<<256, 256>>>(grid,
+                subgrid_FROM_D_wrapped,
+                subgrid_TO_D_wrapped,
+                has_from_interface_horizontal,
+                has_from_interface_vertical,
+                has_to_interface_horizontal,
+                has_to_interface_vertical,
+                interface_left, interface_right,
+                interface_down, interface_up,
+                subgridX, subgridY);
+}
+
+
+
+__device__
+int get_dir(int i, int j)
+{
+    const int dirs[9][2] = {
+        {-1, -1},
+        {0, -1},
+        {1, -1},
+        {-1, 0},
+        {0, 0},
+        {1, 0},
+        {-1, 1},
+        {0, 1},
+        {1, 1}
+    };
+
+    return dirs[i][j];
 }
 
 __device__
-double d2q9_t0(double x, double y, int c, int d)
+void fluid_to_kin(const double *w, double *f)
 {
-    (void)d; // same for all directions
+    static const double c2 = 1. / 3.;
+    double dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
 
+    l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
+    double l2_ov_c2 = l2 / c2;
+
+    l4 = l2 * l2;
+    c4 = c2 * c2;
+
+    vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
+    dotvel = sqrt(l2) * (get_dir(4,0) * w[1] + get_dir(4,1) * w[2]) / w[0];
+
+    f[4] = (4. / 9.) * w[0] *
+    (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+    l2 / (2. * c2) * vel2);
+
+    // perpendicular directions
+    for (size_t i = 1; i < 9; i+=2) {
+        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        f[i] = (1. / 9.) * w[0] *
+        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+        l2 / (2. * c2) * vel2);
+    }
+    // diagonal directions
+    for (size_t it = 0; it < 4; it++) {
+        size_t i = it * 2 + 2*(it>1);
+        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        f[i] = (1. / 36.) * w[0] *
+        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
+        l2 / (2. * c2) * vel2);
+    }
+}
+
+__device__
+void kin_to_fluid(const double *f, double *w)
+{
+    w[0] = 0;
+    w[1] = 0;
+    w[2] = 0;
+
+    for (int i = 0; i < 9; i++) {
+        w[0] = w[0] + f[i];
+        w[1] = w[1] + MAXIMUM_VELOCITY * get_dir(i,0) * f[i];
+        w[2] = w[2] + MAXIMUM_VELOCITY * get_dir(i,1) * f[i];
+    }
+}
+
+
+__device__
+double d2q9_t0(double w[3], double x, double y)
+{
     double rho, u, v;
     rho = 1;
     u = 0.03;
@@ -41,15 +128,9 @@ double d2q9_t0(double x, double y, int c, int d)
         v = 0;
     }
 
-    if(c == 0)
-        return rho;
-    else if(c == 1)
-        return rho * u;
-    else if(c == 2)
-        return rho * v;
-    else
-        assert(false);
-        return 0;
+    w[0] = rho;
+    w[1] = rho * u;
+    w[2] = rho * v;
 
     // w[0] = rho;
     // w[1] = rho * u;
@@ -65,13 +146,12 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
 
     int stride = blockDim.x * gridDim.x;
 
-	int cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber;
+	int cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1];
 
 	for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
 	{
         int true_x = id % grid.subgridTrueSize[0];
-        int true_y = (id / grid.subgridTrueSize[0]) % grid.subgridTrueSize[1];
-        int c = id / (grid.subgridTrueSize[0] * grid.subgridTrueSize[1]);
+        int true_y = id / grid.subgridTrueSize[0];
 
         int logical_x = true_x - grid.overlapSize[0];
         int logical_y = true_y - grid.overlapSize[1];
@@ -82,7 +162,16 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
         double xg = grid.physicalMinCoords[0] + (((double)xgInt + 0.5) * grid.physicalSize[0] / (double)grid.size[0]);
         double yg = grid.physicalMinCoords[1] + (((double)ygInt + 0.5) * grid.physicalSize[1] / (double)grid.size[1]);
 
-        subgrid[id] = d2q9_t0(xg, yg, c, d);
+        double w[3];
+        d2q9_t0(w, xg, yg);
+        double f[3][3];
+        fluid_to_kin(w, &f[0][0]);
+
+        for(int c=0;c<grid.conservativesNumber;++c)
+        {
+            int subgrid_id = c * cellNum + id;
+            subgrid[subgrid_id] = f[d][c];
+        }
     }
 }
 
@@ -303,76 +392,19 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
 //   lbm->vel[8][1] = -1;
 
 
-__device__
-int get_dir(int i, int j)
-{
-    const int dirs[9][2] = {
-        {0, 0},
-        {1, 0},
-        {0, 1},
-        {-1, 0},
-        {0, -1},
-        {1, 1},
-        {-1, 1},
-        {-1, -1},
-        {1, -1}
-    };
-
-    return dirs[i][j];
-}
-
-
-__device__
-void fluid_to_kin(const double *w, double *f)
-{
-    static const double c2 = 1. / 3.;
-    double dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
-
-    l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
-    double l2_ov_c2 = l2 / c2;
-
-    l4 = l2 * l2;
-    c4 = c2 * c2;
-
-    vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
-    dotvel = sqrt(l2) * (get_dir(0,0) * w[1] + get_dir(0,1) * w[2]) / w[0];
-
-    f[0] = (4. / 9.) * w[0] *
-    (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-    l2 / (2. * c2) * vel2);
-
-    for (size_t i = 1; i < 5; i++) {
-        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
-        f[i] = (1. / 9.) * w[0] *
-        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-        l2 / (2. * c2) * vel2);
-    }
-    for (size_t i = 5; i < 9; i++) {
-        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
-        f[i] = (1. / 36.) * w[0] *
-        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-        l2 / (2. * c2) * vel2);
-    }
-}
-
-__device__
-void kin_to_fluid(const double *f, double *w)
-{
-    w[0] = 0;
-    w[1] = 0;
-    w[2] = 0;
-
-    for (int i = 0; i < 9; i++) {
-        w[0] = w[0] + f[i];
-        w[1] = w[1] + MAXIMUM_VELOCITY * get_dir(i,0) * f[i];
-        w[2] = w[2] + MAXIMUM_VELOCITY * get_dir(i,1) * f[i];
-    }
-}
-
 
 // similar to D2Q9_step
 __global__
-void d2q9_LBM_step(Grid grid, SubgridArray subgrid_FROM_D, SubgridArray subgrid_TO_D, int subgridX, int subgridY)
+void d2q9_LBM_step(Grid grid,
+                        SubgridArray subgrid_FROM_D,
+                        SubgridArray subgrid_TO_D,
+                        bool has_from_interface_horizontal,
+                        bool has_from_interface_vertical,
+                        bool has_to_interface_horizontal,
+                        bool has_to_interface_vertical,
+                        double *interface_left, double *interface_right,
+                        double *interface_down, double *interface_up,
+                        int subgridX, int subgridY)
 {
     int stride = blockDim.x * gridDim.x;
 
@@ -390,6 +422,7 @@ void d2q9_LBM_step(Grid grid, SubgridArray subgrid_FROM_D, SubgridArray subgrid_
 
         double f[3][3];
 
+        // shift
         for(int d=0; d<grid.directionsNumber; d++)
         {
             double *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
@@ -398,6 +431,19 @@ void d2q9_LBM_step(Grid grid, SubgridArray subgrid_FROM_D, SubgridArray subgrid_
             for(int c=0; c<grid.conservativesNumber; c++)
             {
                 f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
+            }
+        }
+
+        // relax
+        double w[3];
+        kin_to_fluid(&f[0][0], w);
+        double feq[3][3];
+        fluid_to_kin(w, &feq[0][0]);
+        for(int d=0; d<grid.directionsNumber; d++)
+        {
+            for(int c=0; c<grid.conservativesNumber; c++)
+            {
+                f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
             }
         }
 
