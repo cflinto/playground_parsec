@@ -23,8 +23,8 @@
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (64)
-#define PROBLEM_SIZE_Y (64)
+#define PROBLEM_SIZE_X (16)
+#define PROBLEM_SIZE_Y (16)
 #define PROBLEM_SIZE_Z (8)
 
 #define SAVED_DATA_SIZE_X (PROBLEM_SIZE_X)
@@ -92,6 +92,7 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
 void d2q9_LBM_step_caller(Grid grid,
                 double **subgrid_FROM_D,
                 double **subgrid_TO_D,
+                int horizontal_uncomputed_number, int vertical_uncomputed_number,
                 bool has_from_interface_horizontal,
                 bool has_from_interface_vertical,
                 bool has_to_interface_horizontal,

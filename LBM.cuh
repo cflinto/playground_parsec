@@ -17,6 +17,7 @@ __global__ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduce
 __global__ void d2q9_LBM_step(Grid grid,
                         SubgridArray subgrid_FROM_D,
                         SubgridArray subgrid_TO_D,
+                        int horizontal_uncomputed_number, int vertical_uncomputed_number,
                         bool has_from_interface_horizontal,
                         bool has_from_interface_vertical,
                         bool has_to_interface_horizontal,
