@@ -51,7 +51,7 @@ Grid newGrid(int rank, int nodes)
 	grid.size[0] = PROBLEM_SIZE_X;
 	grid.size[1] = PROBLEM_SIZE_Y;
     grid.conservativesNumber = 3;
-    grid.directionsNumber = 2;
+    grid.directionsNumber = 3;
 
 	grid.subgridNumber[0] = 2;
 	grid.subgridNumber[1] = 2;
@@ -309,39 +309,39 @@ s = 0 .. number_of_steps-1
 : descGridD(subgrid_x, subgrid_y, 0)
 
 RW INTERFACE_DOWN
-    <- (s!=0 && subgrid_y>0 && s%overlap_y==0)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 0, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    <- (subgrid_y>0 && s%overlap_y==overlap_y-1)
+    <- (s!=0 && s%overlap_y==0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+subgrid_number_y-1)%subgrid_number_y, 0, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    -> (s!=number_of_steps-1 && subgrid_y>0 && s%overlap_y==overlap_y-1)
-        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y-1, 1, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (s!=number_of_steps-1 && s%overlap_y==overlap_y-1)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+subgrid_number_y-1)%subgrid_number_y, 1, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW INTERFACE_UP
-    <- (s!=0 && subgrid_y<subgrid_number_y-1 && s%overlap_y==0)
+    <- (s!=0 && s%overlap_y==0)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    <- (subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
+    <- (s%overlap_y==overlap_y-1)
         ? NEW
         : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    -> (s!=number_of_steps-1 && subgrid_y<subgrid_number_y-1 && s%overlap_y==overlap_y-1)
+    -> (s!=number_of_steps-1 && s%overlap_y==overlap_y-1)
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW INTERFACE_LEFT
-    <- (s!=0 && subgrid_x>0 && s%overlap_x==0)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (subgrid_x>0 && s%overlap_x==overlap_x-1)
+    <- (s!=0 && s%overlap_x==0)
+        ? HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 0, s/overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (s%overlap_x==overlap_x-1)
         ? NEW
         : NULL [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (s!=number_of_steps-1 && subgrid_x>0 && s%overlap_x==overlap_x-1)
-        ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x-1, subgrid_y, 1, s/overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (s!=number_of_steps-1 && s%overlap_x==overlap_x-1)
+        ? HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 1, s/overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 RW INTERFACE_RIGHT
-    <- (s!=0 && subgrid_x<subgrid_number_x-1 && s%overlap_x==0)
+    <- (s!=0 && s%overlap_x==0)
         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s/overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+    <- (s%overlap_x==overlap_x-1)
         ? NEW
         : NULL [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (s!=number_of_steps-1 && subgrid_x<subgrid_number_x-1 && s%overlap_x==overlap_x-1)
+    -> (s!=number_of_steps-1 && s%overlap_x==overlap_x-1)
         ? HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s/overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 READ SUBGRID_FROM[d = 0..directions_number-1]
@@ -378,7 +378,7 @@ END
 vertical_interface(x, y, side, s)
 
 x = 0 .. subgrid_number_x-1
-y = 0 .. subgrid_number_y-2
+y = 0 .. subgrid_number_y-1
 side = 0 .. 1
 s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
 
@@ -386,8 +386,8 @@ s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
 
 RW VERTICAL_INTERFACE
     <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y+1, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 BODY
@@ -397,7 +397,7 @@ END
 
 horizontal_interface(x, y, side, s)
 
-x = 0 .. subgrid_number_x-2
+x = 0 .. subgrid_number_x-1
 y = 0 .. subgrid_number_y-1
 side = 0 .. 1
 s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
@@ -406,8 +406,8 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 RW HORIZONTAL_INTERFACE
     <- (side==0) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (side==1) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==0) ? INTERFACE_LEFT LBM_STEP(x+1, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT LBM_STEP((x+1)%subgrid_number_x, y, (s+1)*overlap_x-1) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT LBM_STEP((x+1)%subgrid_number_x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
     -> (side==1) ? INTERFACE_RIGHT LBM_STEP(x, y, (s+1)*overlap_x) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY
