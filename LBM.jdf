@@ -69,7 +69,7 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 2;
+	grid.overlapSize[0] = 1;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
@@ -568,7 +568,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 3;
+    number_of_steps = 4;
     int save_interval = 1;
 
 

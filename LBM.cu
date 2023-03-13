@@ -421,11 +421,12 @@ void d2q9_LBM_step(Grid grid,
         int subgrid_true_x = id % grid.subgridTrueSize[0];
         int subgrid_true_y = id / grid.subgridTrueSize[0];
 
-        if(subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
-           subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number)
-        {
-            continue;
-        }
+        bool isInComputationArea=
+            !(
+            subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
+            subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
+            );
+
 
         double f[3][3];
 
@@ -433,43 +434,59 @@ void d2q9_LBM_step(Grid grid,
         for(int d=0; d<grid.directionsNumber; d++)
         {
             double *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
-            int target_true_x = subgrid_true_x - get_dir(d,0);
-            int target_true_y = subgrid_true_y - get_dir(d,1);
+
             for(int c=0; c<grid.conservativesNumber; c++)
             {
-                if(has_from_interface_vertical && target_true_y < grid.overlapSize[1])
+                int i=c+d*grid.conservativesNumber;
+
+                int target_true_x = subgrid_true_x - get_dir(i,0);
+                int target_true_y = subgrid_true_y - get_dir(i,1);
+
+
+                int position_in_interface_left_x = target_true_x;
+                int position_in_interface_left_y = target_true_y;
+                int position_in_interface_right_x = target_true_x - grid.subgridTrueSize[0] + grid.overlapSize[0];
+                int position_in_interface_right_y = target_true_y;
+
+                int position_in_interface_down_x = target_true_x;
+                int position_in_interface_down_y = target_true_y;
+                int position_in_interface_up_x = target_true_x;
+                int position_in_interface_up_y = target_true_y - grid.subgridTrueSize[1] + grid.overlapSize[1];
+
+
+                if(has_from_interface_vertical && position_in_interface_down_y >= 0 && position_in_interface_down_y < grid.overlapSize[1])
                 { // Read from the down interface
                     assert(target_true_y == 0);
                     assert(grid.overlapSize[1] == 1);
-                    f[d][c] = interface_down[c*grid.subgridTrueSize[0] + target_true_x];
-                    //printf("%d %d %d %d reads value %f from down interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
+                    f[d][c] = interface_down[c*grid.subgridTrueSize[0] + position_in_interface_down_x];
                 }
-                else if(has_from_interface_vertical && target_true_y >= grid.subgridTrueSize[1] - grid.overlapSize[1])
+                else if(has_from_interface_vertical && position_in_interface_up_y >= 0 && position_in_interface_up_y < grid.overlapSize[1])
                 { // Read from the up interface
                     assert(target_true_y == grid.subgridTrueSize[1] - 1);
                     assert(grid.overlapSize[1] == 1);
-                    f[d][c] = interface_up[c*grid.subgridTrueSize[0] + target_true_x];
-                    //printf("%d %d %d %d reads value %f from up interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
+                    f[d][c] = interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x];
                 }
-                else if(has_from_interface_horizontal && target_true_x < grid.overlapSize[0])
+                else if(has_from_interface_horizontal && position_in_interface_left_x >= 0 && position_in_interface_left_x < grid.overlapSize[0])
                 { // Read from the left interface
                     f[d][c] = interface_left[
                         d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
                         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                        target_true_y*grid.overlapSize[0] +
-                        target_true_x];
-                    //printf("%d %d %d %d reads value %f from left interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
+                        position_in_interface_left_y*grid.overlapSize[0] +
+                        position_in_interface_left_x];
+                    //f[d][c] = 3.141592655;
+                    printf("%d %d %d %d reads value %f from left interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
                 }
-                else if(has_from_interface_horizontal && target_true_x >= grid.subgridTrueSize[0] - grid.overlapSize[1])
+                else if(has_from_interface_horizontal && position_in_interface_right_x >= 0 && position_in_interface_right_x < grid.overlapSize[0])
                 { // Read from the right interface
                     f[d][c] = interface_right[
                         d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
                         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                        target_true_y*grid.overlapSize[0] +
-                        target_true_x];
-                    //printf("%d %d %d %d reads value %f from right interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
+                        position_in_interface_right_y*grid.overlapSize[0] +
+                        position_in_interface_right_x];
+                    //f[d][c] = 3.141592655;
+                    printf("%d %d %d %d reads value %f from right interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
                 }
-                else
+                else if(isInComputationArea)
                 { // Main case: in the logical space
                     f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
                 }
@@ -477,26 +494,31 @@ void d2q9_LBM_step(Grid grid,
         }
 
         // relax
-        double w[3];
-        kin_to_fluid(&f[0][0], w);
-        double feq[3][3];
-        fluid_to_kin(w, &feq[0][0]);
-        for(int d=0; d<grid.directionsNumber; d++)
+        
+        if(isInComputationArea)
         {
-            for(int c=0; c<grid.conservativesNumber; c++)
+            double w[3];
+            kin_to_fluid(&f[0][0], w);
+            double feq[3][3];
+            fluid_to_kin(w, &feq[0][0]);
+            for(int d=0; d<grid.directionsNumber; d++)
             {
-                f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                for(int c=0; c<grid.conservativesNumber; c++)
+                {
+                    f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                }
             }
         }
+        
 
         int position_in_interface_left_x = subgrid_true_x - grid.overlapSize[0];
-        int position_in_interface_left_y = subgrid_true_y - grid.overlapSize[1];
+        int position_in_interface_left_y = subgrid_true_y;
         int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
-        int position_in_interface_right_y = subgrid_true_y - grid.overlapSize[1];
+        int position_in_interface_right_y = subgrid_true_y;
 
-        int position_in_interface_down_x = subgrid_true_x - grid.overlapSize[0];
+        int position_in_interface_down_x = subgrid_true_x;
         int position_in_interface_down_y = subgrid_true_y - grid.overlapSize[1];
-        int position_in_interface_up_x = subgrid_true_x - grid.overlapSize[0];
+        int position_in_interface_up_x = subgrid_true_x;
         int position_in_interface_up_y = subgrid_true_y - grid.subgridOwnedSize[1];
 
         for(int d=0; d<grid.directionsNumber; d++)
@@ -528,32 +550,45 @@ void d2q9_LBM_step(Grid grid,
                 if(has_to_interface_vertical && position_in_interface_down_y >= 0 && position_in_interface_down_y < grid.overlapSize[1])
                 {
                     assert(grid.overlapSize[1] == 1);
-                    interface_down[c*grid.overlapSize[0] + position_in_interface_down_x] = f[d][c];
+                    interface_down[c*grid.subgridTrueSize[0] + position_in_interface_down_x] = f[d][c];
                 }
                 if(has_to_interface_vertical && position_in_interface_up_y >= 0 && position_in_interface_up_y < grid.overlapSize[1])
                 {
                     assert(grid.overlapSize[1] == 1);
-                    interface_up[c*grid.overlapSize[0] + position_in_interface_up_x] = f[d][c];
+                    interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x] = f[d][c];
                 }
                 if(has_to_interface_horizontal && position_in_interface_left_x >= 0 && position_in_interface_left_x < grid.overlapSize[0])
                 {
-                    interface_left[d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                    interface_left[
+                            d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
                             c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
                             position_in_interface_left_y*grid.overlapSize[0] +
                             position_in_interface_left_x]
                         = f[d][c];
+                    printf("write %f tp interface_left[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
+                            position_in_interface_left_y*grid.overlapSize[0] +
+                            position_in_interface_left_x, d, c, position_in_interface_left_y, position_in_interface_left_x);
                 }
                 if(has_to_interface_horizontal && position_in_interface_right_x >= 0 && position_in_interface_right_x < grid.overlapSize[0])
                 {
-                    interface_right[d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                    interface_right[
+                            d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
                             c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
                             position_in_interface_left_y*grid.overlapSize[0] +
-                            position_in_interface_left_x]
+                            position_in_interface_right_x]
                         = f[d][c];
+                    printf("write %f tp interface_right[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
+                            position_in_interface_left_y*grid.overlapSize[0] +
+                            position_in_interface_right_x, d, c, position_in_interface_left_y, position_in_interface_right_x);
                 }
                 
-                // In all cases, write to the subgrid
-                target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
+                // In we are in the computation area, we write to the subgrid
+                if(isInComputationArea)
+                {
+                    target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
+                }
             }
         }
     }
