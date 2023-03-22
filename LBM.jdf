@@ -274,16 +274,16 @@ RW SUBGRID_D
 BODY [type=CUDA]
     double *subgrid = SUBGRID_D;
 
-    fprintf(stderr, "[Process %d] FillGrid CPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
 
     d2q9_initial_value_d_caller(gridParameters, subgrid, subgrid_x, subgrid_y, d);
 END
 
-BODY
-    double *subgrid = SUBGRID_D;
+// BODY
+//     double *subgrid = SUBGRID_D;
 
-    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
-END
+//     fprintf(stderr, "[Process %d] FillGrid CPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+// END
 
 // BODY
 //     double *subgrid = SUBGRID_D;
@@ -381,15 +381,15 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-READ INTERFACE_LEFT
-    <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-
-READ INTERFACE_RIGHT
-    <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-
 RW SUBGRID_HORIZONTAL_READ[d = 0..directions_number-1]
     <- SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     -> SUBGRID_HORIZONTAL_WRITE[d_it = d] write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+WRITE INTERFACE_LEFT
+    -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+WRITE INTERFACE_RIGHT
+    -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY [type=CUDA]
     printf("[Process %d] kernel read_horizontal_slices GPU (%d %d %d)\n",
@@ -404,15 +404,15 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-WRITE INTERFACE_LEFT
-    -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-
-WRITE INTERFACE_RIGHT
-    -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-
 RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
     <- SUBGRID_HORIZONTAL_READ[d_it=d] read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     -> SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+READ INTERFACE_LEFT
+    <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+READ INTERFACE_RIGHT
+    <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY [type=CUDA]
     printf("[Process %d] kernel LBM_STEP GPU (%d %d %d)\n", rank, subgrid_x, subgrid_y, s);
@@ -448,10 +448,10 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 : descGridD(x, y, 0)
 
 RW HORIZONTAL_INTERFACE
-    <- (side==0) ? INTERFACE_RIGHT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (side==1) ? INTERFACE_LEFT write_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==0) ? INTERFACE_LEFT read_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==1) ? INTERFACE_RIGHT read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==0) ? INTERFACE_RIGHT read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT read_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT write_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
@@ -468,10 +468,10 @@ s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved step
 : descGridD(subgrid_x, subgrid_y, 0)
 
 READ SUBGRID_SAVE_REDUCE
-    <- (s==(number_of_steps+save_interval-1)/save_interval && s!=0)
-        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s==0) ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
-    <- (s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==(number_of_steps+save_interval-1)/save_interval/* && s!=0*/)
+        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- /*(s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ?*/ SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d==0)
@@ -479,7 +479,7 @@ RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x==0 && subgrid_y!=0)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_number_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
@@ -496,6 +496,9 @@ BODY [type=CUDA]
     double *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
 
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
+               rank, subgrid_x, subgrid_y, d, s);
+
+    printf("[Process %d] kernel save_file_reduce GPU (stdout) (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
 
     d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
@@ -599,7 +602,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 4;
+    number_of_steps = 40;
     int save_interval = 1;
 
 
