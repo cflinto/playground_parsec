@@ -33,8 +33,8 @@ void d2q9_LBM_step_caller(Grid grid,
         subgrid_TO_D_wrapped.subgrid[d] = subgrid_TO_D[d];
     }
 
-    printf("d2q9_LBM_step_caller: has_from_interface_horizontal=%d, has_from_interface_vertical=%d, has_to_interface_horizontal=%d, has_to_interface_vertical=%d\n",
-        has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
+    // printf("d2q9_LBM_step_caller: has_from_interface_horizontal=%d, has_from_interface_vertical=%d, has_to_interface_horizontal=%d, has_to_interface_vertical=%d\n",
+    //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
     d2q9_LBM_step<<<256, 256>>>(grid,
                 subgrid_FROM_D_wrapped,
@@ -565,10 +565,10 @@ void d2q9_LBM_step(Grid grid,
                             position_in_interface_left_y*grid.overlapSize[0] +
                             position_in_interface_left_x]
                         = f[d][c];
-                    printf("write %f tp interface_left[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                            position_in_interface_left_y*grid.overlapSize[0] +
-                            position_in_interface_left_x, d, c, position_in_interface_left_y, position_in_interface_left_x);
+                    // printf("write %f tp interface_left[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                    //         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
+                    //         position_in_interface_left_y*grid.overlapSize[0] +
+                    //         position_in_interface_left_x, d, c, position_in_interface_left_y, position_in_interface_left_x);
                 }
                 if(has_to_interface_horizontal && position_in_interface_right_x >= 0 && position_in_interface_right_x < grid.overlapSize[0])
                 {
@@ -578,10 +578,10 @@ void d2q9_LBM_step(Grid grid,
                             position_in_interface_left_y*grid.overlapSize[0] +
                             position_in_interface_right_x]
                         = f[d][c];
-                    printf("write %f tp interface_right[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                            position_in_interface_left_y*grid.overlapSize[0] +
-                            position_in_interface_right_x, d, c, position_in_interface_left_y, position_in_interface_right_x);
+                    // printf("write %f tp interface_right[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
+                    //         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
+                    //         position_in_interface_left_y*grid.overlapSize[0] +
+                    //         position_in_interface_right_x, d, c, position_in_interface_left_y, position_in_interface_right_x);
                 }
                 
                 // In we are in the computation area, we write to the subgrid

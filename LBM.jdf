@@ -274,16 +274,16 @@ RW SUBGRID_D
 BODY [type=CUDA]
     double *subgrid = SUBGRID_D;
 
-    fprintf(stderr, "[Process %d] FillGrid CPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
 
     d2q9_initial_value_d_caller(gridParameters, subgrid, subgrid_x, subgrid_y, d);
 END
 
-BODY
-    double *subgrid = SUBGRID_D;
+// BODY
+//     double *subgrid = SUBGRID_D;
 
-    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
-END
+//     fprintf(stderr, "[Process %d] FillGrid CPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+// END
 
 // BODY
 //     double *subgrid = SUBGRID_D;
@@ -496,6 +496,9 @@ BODY [type=CUDA]
     double *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
 
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
+               rank, subgrid_x, subgrid_y, d, s);
+
+    printf("[Process %d] kernel save_file_reduce GPU (stdout) (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
 
     d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
