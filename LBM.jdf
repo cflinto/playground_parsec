@@ -381,11 +381,11 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-READ INTERFACE_LEFT
-    <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+WRITE INTERFACE_LEFT
+    -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-READ INTERFACE_RIGHT
-    <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+WRITE INTERFACE_RIGHT
+    -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 RW SUBGRID_HORIZONTAL_READ[d = 0..directions_number-1]
     <- SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
@@ -404,11 +404,11 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-WRITE INTERFACE_LEFT
-    -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+subgrid_number_x-1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+READ INTERFACE_LEFT
+    <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-WRITE INTERFACE_RIGHT
-    -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+READ INTERFACE_RIGHT
+    <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
     <- SUBGRID_HORIZONTAL_READ[d_it=d] read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
@@ -448,10 +448,10 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 : descGridD(x, y, 0)
 
 RW HORIZONTAL_INTERFACE
-    <- (side==0) ? INTERFACE_RIGHT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (side==1) ? INTERFACE_LEFT write_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==0) ? INTERFACE_LEFT read_horizontal_slices((x+1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==1) ? INTERFACE_RIGHT read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==0) ? INTERFACE_RIGHT read_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT write_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 BODY
     fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
@@ -468,10 +468,10 @@ s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved step
 : descGridD(subgrid_x, subgrid_y, 0)
 
 READ SUBGRID_SAVE_REDUCE
-    <- (s==(number_of_steps+save_interval-1)/save_interval && s!=0)
-        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s==0) ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
-    <- (s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==(number_of_steps+save_interval-1)/save_interval/* && s!=0*/)
+        ? SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- /*(s!=0 && s!=(number_of_steps+save_interval-1)/save_interval) ?*/ SUBGRID_TO[d_it = d] LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d==0)
@@ -479,7 +479,7 @@ RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x==0 && subgrid_y!=0)
-        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_number_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
@@ -599,7 +599,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 4;
+    number_of_steps = 40;
     int save_interval = 1;
 
 
