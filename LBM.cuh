@@ -22,7 +22,6 @@ __global__ void d2q9_LBM_step(Grid grid,
                         bool has_from_interface_vertical,
                         bool has_to_interface_horizontal,
                         bool has_to_interface_vertical,
-                        double *interface_left, double *interface_right,
                         double *interface_down, double *interface_up,
                         int subgridX, int subgridY);
 

@@ -370,7 +370,6 @@ BODY [type=CUDA]
                 (s!=0 && s%overlap_y==0),
                 (s%overlap_x==overlap_x-1),
                 (s!=number_of_steps-1 && s%overlap_y==overlap_y-1),
-                INTERFACE_UP, INTERFACE_DOWN,//INTERFACE_LEFT, INTERFACE_RIGHT, // TODO !!!
                 INTERFACE_UP, INTERFACE_DOWN,
                 subgrid_x, subgrid_y);
 END

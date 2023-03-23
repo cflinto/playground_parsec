@@ -20,7 +20,6 @@ void d2q9_LBM_step_caller(Grid grid,
                 bool has_from_interface_vertical,
                 bool has_to_interface_horizontal,
                 bool has_to_interface_vertical,
-                double *interface_left, double *interface_right,
                 double *interface_down, double *interface_up,
                 int subgridX, int subgridY)
 {
@@ -44,7 +43,6 @@ void d2q9_LBM_step_caller(Grid grid,
                 has_from_interface_vertical,
                 has_to_interface_horizontal,
                 has_to_interface_vertical,
-                interface_left, interface_right,
                 interface_down, interface_up,
                 subgridX, subgridY);
 }
@@ -408,7 +406,6 @@ void d2q9_LBM_step(Grid grid,
                         bool has_from_interface_vertical,
                         bool has_to_interface_horizontal,
                         bool has_to_interface_vertical,
-                        double *interface_left, double *interface_right,
                         double *interface_down, double *interface_up,
                         int subgridX, int subgridY)
 {
@@ -442,12 +439,6 @@ void d2q9_LBM_step(Grid grid,
                 int target_true_x = subgrid_true_x - get_dir(i,0);
                 int target_true_y = subgrid_true_y - get_dir(i,1);
 
-
-                int position_in_interface_left_x = target_true_x;
-                int position_in_interface_left_y = target_true_y;
-                int position_in_interface_right_x = target_true_x - grid.subgridTrueSize[0] + grid.overlapSize[0];
-                int position_in_interface_right_y = target_true_y;
-
                 int position_in_interface_down_x = target_true_x;
                 int position_in_interface_down_y = target_true_y;
                 int position_in_interface_up_x = target_true_x;
@@ -465,26 +456,6 @@ void d2q9_LBM_step(Grid grid,
                     assert(target_true_y == grid.subgridTrueSize[1] - 1);
                     assert(grid.overlapSize[1] == 1);
                     f[d][c] = interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x];
-                }
-                else if(has_from_interface_horizontal && position_in_interface_left_x >= 0 && position_in_interface_left_x < grid.overlapSize[0])
-                { // Read from the left interface
-                    f[d][c] = interface_left[
-                        d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                        c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                        position_in_interface_left_y*grid.overlapSize[0] +
-                        position_in_interface_left_x];
-                    //f[d][c] = 3.141592655;
-                    printf("%d %d %d %d reads value %f from left interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
-                }
-                else if(has_from_interface_horizontal && position_in_interface_right_x >= 0 && position_in_interface_right_x < grid.overlapSize[0])
-                { // Read from the right interface
-                    f[d][c] = interface_right[
-                        d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                        c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                        position_in_interface_right_y*grid.overlapSize[0] +
-                        position_in_interface_right_x];
-                    //f[d][c] = 3.141592655;
-                    printf("%d %d %d %d reads value %f from right interface\n", subgrid_true_x, subgrid_true_y, c, d, f[d][c]);
                 }
                 else if(isInComputationArea)
                 { // Main case: in the logical space
@@ -510,9 +481,6 @@ void d2q9_LBM_step(Grid grid,
             }
         }
         
-
-        int position_in_interface_left_x = subgrid_true_x - grid.overlapSize[0];
-        int position_in_interface_left_y = subgrid_true_y;
         int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
         int position_in_interface_right_y = subgrid_true_y;
 
@@ -556,32 +524,6 @@ void d2q9_LBM_step(Grid grid,
                 {
                     assert(grid.overlapSize[1] == 1);
                     interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x] = f[d][c];
-                }
-                if(has_to_interface_horizontal && position_in_interface_left_x >= 0 && position_in_interface_left_x < grid.overlapSize[0])
-                {
-                    interface_left[
-                            d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                            position_in_interface_left_y*grid.overlapSize[0] +
-                            position_in_interface_left_x]
-                        = f[d][c];
-                    // printf("write %f tp interface_left[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                    //         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                    //         position_in_interface_left_y*grid.overlapSize[0] +
-                    //         position_in_interface_left_x, d, c, position_in_interface_left_y, position_in_interface_left_x);
-                }
-                if(has_to_interface_horizontal && position_in_interface_right_x >= 0 && position_in_interface_right_x < grid.overlapSize[0])
-                {
-                    interface_right[
-                            d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                            c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                            position_in_interface_left_y*grid.overlapSize[0] +
-                            position_in_interface_right_x]
-                        = f[d][c];
-                    // printf("write %f tp interface_right[%d] (d=%d, c=%d, y=%d, x=%d)\n", f[d][c], d*grid.overlapSize[0]*grid.subgridTrueSize[1]*grid.conservativesNumber +
-                    //         c*grid.overlapSize[0]*grid.subgridTrueSize[1] +
-                    //         position_in_interface_left_y*grid.overlapSize[0] +
-                    //         position_in_interface_right_x, d, c, position_in_interface_left_y, position_in_interface_right_x);
                 }
                 
                 // In we are in the computation area, we write to the subgrid
