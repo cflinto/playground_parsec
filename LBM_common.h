@@ -89,6 +89,9 @@ typedef struct SubgridArray
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
+
+void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid, double *interface_left, double *interface_right, int subgridX, int subgridY);
+void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid, double *interface_left, double *interface_right, int subgridX, int subgridY);
 void d2q9_LBM_step_caller(Grid grid,
                 double **subgrid_FROM_D,
                 double **subgrid_TO_D,

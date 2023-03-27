@@ -12,6 +12,30 @@ void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_su
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
 }
 
+void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
+{
+    // wrap the array
+    SubgridArray subgrid_D_wrapped;
+    for(int d=0;d<grid.directionsNumber;d++)
+    {
+        subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
+    }
+
+    d2q9_read_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+}
+
+void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
+{
+    // wrap the array
+    SubgridArray subgrid_D_wrapped;
+    for(int d=0;d<grid.directionsNumber;d++)
+    {
+        subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
+    }
+
+    d2q9_write_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+}
+
 void d2q9_LBM_step_caller(Grid grid,
                 double **subgrid_FROM_D,
                 double **subgrid_TO_D,
@@ -228,173 +252,100 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
 }
 
 
+// Read the subgrid and write to the horizontal slices
+__global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgridWrapped, double *interface_left, double *interface_right, int subgridX, int subgridY)
+{
+    int stride = blockDim.x * gridDim.x;
 
-// void d2q9_step(d2q9 *lbm) {
-//   d2q9_shift(lbm);
-//   d2q9_relax(lbm);
-//   d2q9_boundary(lbm);
-// }
+    int cellNum = grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber * 2;
 
-// void d2q9_relax(d2q9 *lbm) {
+    for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
+    {
+        int true_x = id % grid.overlapSize[0];
+        int true_y = (id / grid.overlapSize[0]) % grid.subgridTrueSize[1];
+        int c = (id / (grid.overlapSize[0] * grid.subgridTrueSize[1])) % grid.conservativesNumber;
+        int d = (id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber)) % grid.directionsNumber;
+        int side = id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber); // 0 for left, 1 for right
 
-// #pragma omp for schedule(static) nowait
-//   for (size_t i = 0; i < lbm->nx; i++) {
-//     for (size_t j = 0; j < lbm->ny; j++) {
-//       double f[9];
-//       double feq[9];
-//       for (size_t k = 0; k < 9; k++) {
-//         f[k] = lbm->fnext[k][i * lbm->ny + j];
-//       }
-//       double w[3];
-//       kin_to_fluid(f, w, lbm);
-//       for (size_t k = 0; k < 3; k++) {
-//         lbm->w[k][i * lbm->ny + j] = w[k];
-//         // printf("u=%f\n",w[1]/w[0]);
-//       }
-//       fluid_to_kin(w, feq, lbm);
-//       for (size_t k = 0; k < 9; k++) {
-//         lbm->f[k][i * lbm->ny + j] =
-// 	  _RELAX * feq[k] + (1 - _RELAX) * lbm->fnext[k][i * lbm->ny + j];
-//       }
-//     }
-//   }
-// }
+        true_x += side * (grid.subgridTrueSize[0] - grid.overlapSize[0]); // Displace to the right if we target the right side
 
-// void d2q9_boundary(d2q9 *lbm) {
+        if(side == 0)
+        {
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
 
-// #pragma omp for schedule(static) nowait
-//   for (size_t i = 0; i < lbm->nx; i++) {
-//     for (size_t j = 0; j < lbm->ny; j++) {
-//       double x = i * lbm->dx;
-//       double y = j * lbm->dx;
-//       if (mask(x, y)) {
-//         double wb[3];
-//         imposed_data(x, y, lbm->tnow, wb);
-//         double fb[9];
-//         fluid_to_kin(wb, fb, lbm);
-//         for (size_t k = 0; k < 9; k++) {
-//           lbm->f[k][i * lbm->ny + j] =
-// 	    _RELAX * fb[k] + (1 - _RELAX) * lbm->f[k][i * lbm->ny + j];
-//         }
-//       }
-//     }
-//   }
-// }
+            interface_left[id] = subgridWrapped.subgrid[d][subgrid_id];
+        }
+        else
+        {
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
 
-// void d2q9_solve(d2q9 *lbm, double tmax) {
-//   lbm->tmax = tmax;
-//   double local_tnow = lbm->tnow;
-//   const double dt = lbm->dx / lbm->smax;
-//   const size_t num_iter = (size_t)(ceil((tmax - local_tnow) / dt));
-//   const size_t inter_print = num_iter / 10 == 0 ? 1 : num_iter / 10;
-// #ifdef _OPENMP
-//   double tstart_chunk;
-//   tstart_chunk = omp_get_wtime();
-// #endif
-// #pragma omp parallel default(none) shared(lbm, tmax, tstart_chunk, dt, inter_print)	\
-//   firstprivate(local_tnow)
-//   {
-//     size_t iter_count = 0;
+            interface_right[id - grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber] = subgridWrapped.subgrid[d][subgrid_id];
+        }
+    }
+}
 
-//     while (local_tnow < tmax) {
-//       d2q9_step(lbm);
-// #pragma omp single nowait
-//       lbm->tnow += dt;
-//       if (!iter_count) {
-// #ifdef _OPENMP
-// #pragma omp master
-//         {
-//           double tend_chunk = omp_get_wtime();
-//           printf("t=%f dt=%f tmax=%f (%zu iter in %.3fs)\n", lbm->tnow, dt,
-//                  lbm->tmax, inter_print, tend_chunk - tstart_chunk);
-//           tstart_chunk = tend_chunk;
-//         }
-// #else
-//         printf("t=%f dt=%f tmax=%f\n", lbm->tnow, dt, lbm->tmax);
-// #endif
-//       }
-// #pragma omp barrier
-//       iter_count = iter_count == inter_print ? 0 : iter_count + 1;
-//       local_tnow += dt;
-//     }
-//   }
-// }
+// Write to the subgrid from the horizontal slices
+__global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgridWrapped, double *interface_left, double *interface_right, int subgridX, int subgridY)
+{
+    int stride = blockDim.x * gridDim.x;
 
-// void fluid_to_kin(const double *w, double *f, d2q9 *lbm) {
-//   static const double c2 = 1. / 3.;
-//   double dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
+    int cellNum = grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber * 2;
 
-//   l2 = lbm->smax * lbm->smax;
-//   double l2_ov_c2 = l2 / c2;
+    for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
+    {
+        int true_x = id % grid.overlapSize[0];
+        int true_y = (id / grid.overlapSize[0]) % grid.subgridTrueSize[1];
+        int c = (id / (grid.overlapSize[0] * grid.subgridTrueSize[1])) % grid.conservativesNumber;
+        int d = (id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber)) % grid.directionsNumber;
+        int side = id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber); // 0 for left, 1 for right
+// printf("grid.overlapSize[0] = %d\n", grid.overlapSize[0]);
+// printf("grid.conservativesNumber = %d\n", grid.conservativesNumber);
+// printf("cellNum = %d\n", cellNum);
+// printf("true_x (2) = %d\n", true_x);
+// printf("true_y = %d\n", true_y);
+// printf("grid.subgridTrueSize[0]=%d\n", grid.subgridTrueSize[0]);
+// printf("grid.subgridTrueSize[1]=%d\n", grid.subgridTrueSize[1]);
+// printf("grid.overlapSize[0]=%d\n", grid.overlapSize[0]);
+// printf("grid.overlapSize[1]=%d\n", grid.overlapSize[1]);
+// printf("d=%d\n", d);
 
-//   l4 = l2 * l2;
-//   c4 = c2 * c2;
+        true_x += side * (grid.subgridTrueSize[0] - grid.overlapSize[0]); // Displace to the right if we target the right side
 
-//   vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
-//   dotvel = sqrt(l2) * (lbm->vel[0][0] * w[1] + lbm->vel[0][1] * w[2]) / w[0];
+        if(side == 0)
+        {
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
 
-//   f[0] = (4. / 9.) * w[0] *
-//     (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-//      l2 / (2. * c2) * vel2);
+            subgridWrapped.subgrid[d][subgrid_id] = interface_left[id];
+        }
+        else
+        {
+// //printf("dzad %f\n", 3.14);
+//             int subgrid_id = 
+//                     c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+//                     + true_y * grid.subgridTrueSize[0]
+//                     + true_x;
+// printf("write %f (interface[%d]) (%p) to subgrid[%d][%d]\n",
+//     3.14, id - grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber, interface_right, d, subgrid_id);
+//             subgridWrapped.subgrid[d][subgrid_id] = interface_right[id - grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber];
 
-//   for (size_t i = 1; i < 5; i++) {
-//     dotvel = sqrt(l2) * (lbm->vel[i][0] * w[1] + lbm->vel[i][1] * w[2]) / w[0];
-//     f[i] = (1. / 9.) * w[0] *
-//       (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-//        l2 / (2. * c2) * vel2);
-//   }
-//   for (size_t i = 5; i < 9; i++) {
-//     dotvel = sqrt(l2) * (lbm->vel[i][0] * w[1] + lbm->vel[i][1] * w[2]) / w[0];
-//     f[i] = (1. / 36.) * w[0] *
-//       (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-//        l2 / (2. * c2) * vel2);
-//   }
-// }
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
 
-// void kin_to_fluid(const double *restrict f, double *restrict w, d2q9 *lbm) {
-
-//   w[0] = 0;
-//   w[1] = 0;
-//   w[2] = 0;
-//   double c = lbm->smax;
-
-//   for (size_t i = 0; i < 9; i++) {
-//     w[0] = w[0] + f[i];
-//     w[1] = w[1] + c * lbm->vel[i][0] * f[i];
-//     w[2] = w[2] + c * lbm->vel[i][1] * f[i];
-//   }
-// }
-
-
-
-//   lbm->vel[0][0] = 0;
-//   lbm->vel[0][1] = 0;
-
-//   lbm->vel[1][0] = 1;
-//   lbm->vel[1][1] = 0;
-
-//   lbm->vel[2][0] = 0;
-//   lbm->vel[2][1] = 1;
-
-//   lbm->vel[3][0] = -1;
-//   lbm->vel[3][1] = 0;
-
-//   lbm->vel[4][0] = 0;
-//   lbm->vel[4][1] = -1;
-
-//   lbm->vel[5][0] = 1;
-//   lbm->vel[5][1] = 1;
-
-//   lbm->vel[6][0] = -1;
-//   lbm->vel[6][1] = 1;
-
-//   lbm->vel[7][0] = -1;
-//   lbm->vel[7][1] = -1;
-
-//   lbm->vel[8][0] = 1;
-//   lbm->vel[8][1] = -1;
-
-
+            subgridWrapped.subgrid[d][subgrid_id] = interface_right[id - grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber];
+        }
+    }
+}
 
 // similar to D2Q9_step
 __global__

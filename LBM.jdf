@@ -364,10 +364,10 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-WRITE INTERFACE_LEFT
+WRITE INTERFACE_LEFT_HRZ_RD
     -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-WRITE INTERFACE_RIGHT
+WRITE INTERFACE_RIGHT_HRZ_RD
     -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 RW SUBGRID_HORIZONTAL_READ[d = 0..directions_number-1]
@@ -375,6 +375,17 @@ RW SUBGRID_HORIZONTAL_READ[d = 0..directions_number-1]
     -> SUBGRID_HORIZONTAL_WRITE[d_it = d] write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY [type=CUDA]
+    double *subgrid_d[gridParameters.directionsNumber];
+    double *interface_left = INTERFACE_LEFT_HRZ_RD;
+    double *interface_right = INTERFACE_RIGHT_HRZ_RD;
+
+    for(int d=0;d<gridParameters.directionsNumber;++d)
+    {
+        subgrid_d[d] = SUBGRID_HORIZONTAL_READ[d];
+    }
+
+    d2q9_read_horizontal_slices_caller(gridParameters, subgrid_d, interface_left, interface_right, subgrid_x, subgrid_y);
+
     fprintf(stderr, "[Process %d] kernel read_horizontal_slices GPU (%d %d %d)\n",
                rank, subgrid_x, subgrid_y, s);
 END
@@ -387,16 +398,16 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 
 : descGridD(subgrid_x, subgrid_y, 0)
 
-READ INTERFACE_LEFT[fre = 0..0] // fake parametrized flow (to make it work with the current implementation)
+READ INTERFACE_LEFT_HRZ_WRT[azd = 0..0] // fake parametrized flow (to make it work with the current implementation)
     <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-READ INTERFACE_RIGHT[fre = 0..0] // fake parametrized flow (to make it work with the current implementation)
+READ INTERFACE_RIGHT_HRZ_WRT[azdazd = 0..0] // fake parametrized flow (to make it work with the current implementation)
     <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-WRITE INTERFACE_UP_HRZ
+WRITE INTERFACE_UP_HRZ[azdazdazd = 0..0] // fake parametrized flow (to make it work with the current implementation)
     -> VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
-WRITE INTERFACE_DOWN_HRZ
+WRITE INTERFACE_DOWN_HRZ[azdazdazdazd = 0..0] // fake parametrized flow (to make it work with the current implementation)
     -> VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
@@ -408,6 +419,17 @@ RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
         ? SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY [type=CUDA]
+    double *subgrid_d[gridParameters.directionsNumber];
+    double *interface_left = INTERFACE_LEFT_HRZ_WRT[0];
+    double *interface_right = INTERFACE_RIGHT_HRZ_WRT[0];
+
+    for(int d=0;d<gridParameters.directionsNumber;++d)
+    {
+        subgrid_d[d] = SUBGRID_HORIZONTAL_WRITE[d];
+    }
+
+    d2q9_write_horizontal_slices_caller(gridParameters, subgrid_d, interface_left, interface_right, subgrid_x, subgrid_y);
+
     fprintf(stderr, "[Process %d] kernel write_horizontal_slices GPU (%d %d %d)\n", rank, subgrid_x, subgrid_y, s);
 END
 
@@ -428,9 +450,9 @@ RW VERTICAL_INTERFACE
         ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // Cases where we get the vertical interfaces from write_horizontal_slices
     <- (side==0 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
-        ? INTERFACE_UP_HRZ write_horizontal_slices(x, y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+        ? INTERFACE_UP_HRZ[azdazdazd = 0] write_horizontal_slices(x, y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     <- (side==1 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
-        ? INTERFACE_DOWN_HRZ write_horizontal_slices(x, (y+1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+        ? INTERFACE_DOWN_HRZ[azdazdazdazd = 0] write_horizontal_slices(x, (y+1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
@@ -438,7 +460,7 @@ RW VERTICAL_INTERFACE
     -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     -> (side==1) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
-BODY
+BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
                 rank, x, y, side, s);
 END
@@ -453,12 +475,12 @@ s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
 : descGridD(x, y, 0)
 
 RW HORIZONTAL_INTERFACE
-    <- (side==0) ? INTERFACE_RIGHT read_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    <- (side==1) ? INTERFACE_LEFT read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==0) ? INTERFACE_LEFT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
-    -> (side==1) ? INTERFACE_RIGHT write_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==0) ? INTERFACE_RIGHT_HRZ_RD read_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT_HRZ_RD read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT_HRZ_WRT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT_HRZ_WRT write_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
-BODY
+BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
                rank, x, y, side, s);
 END
@@ -488,14 +510,16 @@ RW SUBGRID_SAVE_REDUCE
         descGridD(subgrid_x, subgrid_y, d)
 
 RW SUBGRID_SAVE_REDUCED
-    <- (subgrid_x==0 && subgrid_y==0 && d==0)
-        ? NEW [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
-    <- (subgrid_x==0 && subgrid_y!=0)
+    <- (subgrid_x==0 && subgrid_y!=0 && d!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <- (subgrid_x==0 && subgrid_y!=0 && d==0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     <- (subgrid_x!=0)
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <-  (subgrid_x==0 && subgrid_y==0 && d==0) ? // Without the condition: crashes (why?)
+        NEW [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
         ? SUBGRID_TO_SAVE save_file(s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
     -> (subgrid_x == subgrid_number_x-1 && subgrid_y != subgrid_number_y-1)
