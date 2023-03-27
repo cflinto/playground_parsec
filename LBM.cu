@@ -267,7 +267,8 @@ __global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgridWrapp
         int d = (id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber)) % grid.directionsNumber;
         int side = id / (grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber); // 0 for left, 1 for right
 
-        true_x += side * (grid.subgridTrueSize[0] - grid.overlapSize[0]); // Displace to the right if we target the right side
+        true_x += side * (grid.subgridLogicalSize[0]); // Displace to the right if we target the right side
+        true_x += (1-side) * grid.overlapSize[0]; //
 
         if(side == 0)
         {
