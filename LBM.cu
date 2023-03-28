@@ -36,6 +36,18 @@ void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *
     d2q9_write_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
 }
 
+void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY)
+{
+    // wrap the array
+    SubgridArray subgrid_D_wrapped;
+    for(int d=0;d<grid.directionsNumber;d++)
+    {
+        subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
+    }
+
+    d2q9_read_vertical_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_down, interface_up, subgridX, subgridY);
+}
+
 void d2q9_LBM_step_caller(Grid grid,
                 double **subgrid_FROM_D,
                 double **subgrid_TO_D,
@@ -344,6 +356,72 @@ __global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgridWrap
                     + true_x;
 
             subgridWrapped.subgrid[d][subgrid_id] = interface_right[id - grid.overlapSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber];
+        }
+    }
+}
+
+// Write the upper and lower slices to corresponding interface
+// Only the relevant direction is written, i.e., subgrid_d.subgrid[0] goes to interface_down and subgrid_d.subgrid[2] goes to interface_up
+__global__
+void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *interface_down, double *interface_up, int subgridX, int subgridY)
+{
+    int stride = blockDim.x * gridDim.x;
+
+    // assert(grid.overlapSize[1] == 1);
+    // grid.overlapSize[1] has been replaced with "1"
+
+    int cellNum = 1 * grid.subgridTrueSize[0] * grid.conservativesNumber * 2;
+
+    for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
+    {
+        int true_x = id % grid.subgridTrueSize[0];
+        int true_y = 0;//(id / grid.subgridTrueSize[0]) % 1;
+        int c = (id / (grid.subgridTrueSize[0] * 1)) % grid.conservativesNumber;
+        int side = id / (grid.subgridTrueSize[0] * 1 * grid.conservativesNumber); // 0 for down, 1 for up
+
+        //true_y += side * (grid.subgridTrueSize[1] - 1 - grid.overlapSize[1]); // Displace to the up if we target the up side
+        true_y += side * (grid.subgridLogicalSize[1]); // Displace to the up if we target the up side
+        true_y += (1-side) * (grid.overlapSize[1]); //
+
+        // if(side == 0)
+        // {
+        //     int subgrid_id = 
+        //             c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+        //             + true_y * grid.subgridTrueSize[0]
+        //             + true_x;
+
+        //     interface_down[id] = subgridWrapped.subgrid[0][subgrid_id];
+        // }
+        // else
+        // {
+        //     int subgrid_id = 
+        //             c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+        //             + true_y * grid.subgridTrueSize[0]
+        //             + true_x;
+
+        //     interface_up[id - 1 * grid.subgridTrueSize[0] * grid.conservativesNumber] = subgridWrapped.subgrid[2][subgrid_id];
+        // }
+        if(side == 0)
+        {
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
+
+            interface_down[id] = subgridWrapped.subgrid[0][subgrid_id];
+            //interface_down[id] = subgridY*10;
+            //printf("write %f (subgrid[%d,%d,%d][%d](%p)) to interface_down[%d]\n", subgrid_d.subgrid[2][subgrid_id], c, true_y, true_x, subgrid_id, subgrid_d.subgrid[2], id);
+        }
+        else
+        {
+            int subgrid_id = 
+                    c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
+                    + true_y * grid.subgridTrueSize[0]
+                    + true_x;
+
+            interface_up[id - 1 * grid.subgridTrueSize[0] * grid.conservativesNumber] = subgridWrapped.subgrid[2][subgrid_id];
+            //interface_up[id - 1 * grid.subgridTrueSize[0] * grid.conservativesNumber] = subgridY*100;
+            //printf("write %f (subgrid[%d,%d,%d][%d](%p)) to interface_up[%d]\n", subgrid_d.subgrid[0][subgrid_id], c, true_y, true_x, subgrid_id, subgrid_d.subgrid[2], id - 1 * grid.subgridTrueSize[0] * grid.conservativesNumber);
         }
     }
 }

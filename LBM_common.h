@@ -23,8 +23,8 @@
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (16)
-#define PROBLEM_SIZE_Y (16)
+#define PROBLEM_SIZE_X (128)
+#define PROBLEM_SIZE_Y (128)
 #define PROBLEM_SIZE_Z (8)
 
 #define SAVED_DATA_SIZE_X (PROBLEM_SIZE_X)
@@ -90,8 +90,9 @@ typedef struct SubgridArray
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
 
-void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid, double *interface_left, double *interface_right, int subgridX, int subgridY);
-void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid, double *interface_left, double *interface_right, int subgridX, int subgridY);
+void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
+void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
+void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY);
 void d2q9_LBM_step_caller(Grid grid,
                 double **subgrid_FROM_D,
                 double **subgrid_TO_D,

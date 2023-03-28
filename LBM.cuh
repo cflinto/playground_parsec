@@ -17,6 +17,7 @@ __global__ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduce
 
 __global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
 __global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
+__global__ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY);
 
 __global__ void d2q9_LBM_step(Grid grid,
                         SubgridArray subgrid_FROM_D,
