@@ -334,10 +334,10 @@ BODY [type=CUDA]
                 subgrid_TO_D,
                 1,//s%overlap_x+1,
                 1,//s%overlap_y+1,
-                0,
+                (s!=0 && s%overlap_x==0),
                 (s!=0 && s%overlap_y==0),
-                0,
-                (s!=number_of_steps-1 && s%overlap_y==overlap_y-1 && (s%overlap_x!=overlap_x-1 || s==0)),
+                (s%overlap_x==overlap_x-1),
+                (s!=number_of_steps-1 && s%overlap_y==overlap_y-1),
                 INTERFACE_UP, INTERFACE_DOWN,
                 subgrid_x, subgrid_y);
 END
@@ -391,10 +391,10 @@ READ INTERFACE_RIGHT_HRZ_WRT[azdazd = 0..0] // fake parametrized flow (to make i
     <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
 
 WRITE INTERFACE_UP_HRZ[azdazdazd = 0..0] // fake parametrized flow (to make it work with the current implementation)
-    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 WRITE INTERFACE_DOWN_HRZ[azdazdazdazd = 0..0] // fake parametrized flow (to make it work with the current implementation)
-    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 1, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
     <- SUBGRID_HORIZONTAL_READ[d_it=d] read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
@@ -447,7 +447,6 @@ RW VERTICAL_INTERFACE
         ? INTERFACE_DOWN_HRZ[azdazdazdazd = 0] write_horizontal_slices(x, (y+1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
-    <- NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"] // To make sure we never arrive here
 
     // In all cases, we send to LBM_STEP
     -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
