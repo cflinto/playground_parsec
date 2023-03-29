@@ -442,9 +442,9 @@ RW VERTICAL_INTERFACE
         ? INTERFACE_DOWN LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // Cases where we get the vertical interfaces from write_horizontal_slices
     <- (side==0 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
-        ? INTERFACE_UP_HRZ[azdazdazd = 0] write_horizontal_slices(x, (y+subgrid_number_y-1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+        ? INTERFACE_DOWN_HRZ[azdazdazdazd = 0] write_horizontal_slices(x, (y+subgrid_number_y-1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     <- (side==1 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
-        ? INTERFACE_DOWN_HRZ[azdazdazdazd = 0] write_horizontal_slices(x, y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+        ? INTERFACE_UP_HRZ[azdazdazd = 0] write_horizontal_slices(x, y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     // <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     <- NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"] // To make sure we never arrive here
@@ -456,21 +456,22 @@ RW VERTICAL_INTERFACE
 BODY
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
                 rank, x, y, side, s);
-    if(x==0 && y==1)
-    {
-        double *vertical_interface = VERTICAL_INTERFACE;
+    // if(x==0/* && y==1*/)
+    // {
+    //     double *vertical_interface = VERTICAL_INTERFACE;
 
-        int i = 1*gridParameters.subgridTrueSize[0];
+    //     int i = 1*gridParameters.subgridTrueSize[0];
+    //     int first = 40 + gridParameters.overlapSize[0];
 
-        printf("kernel vertical_interface CPU (%d %d %d %d) [45-49] = %f %f %f %f %f\n"
-            , x, y, side, s
-            , vertical_interface[i+45], vertical_interface[i+46], vertical_interface[i+47], vertical_interface[i+48], vertical_interface[i+49]);
-        // for(int r=0;r<60;r+=5)
-        // {
-        //     printf("kernel vertical_interface CPU (%d %d %d %d) [%d-%d] = %f %f %f %f %f\n",
-        //         x, y, side, s, r, r+4, vertical_interface[i+r], vertical_interface[i+r+1], vertical_interface[i+r+2], vertical_interface[i+r+3], vertical_interface[i+r+4]);
-        // }
-    }
+    //     printf("kernel vertical_interface CPU (%d %d %d %d) [%d-%d] = %f %f %f %f %f\n",
+    //         x, y, side, s, first, first+4,
+    //         vertical_interface[i+first], vertical_interface[i+first+1], vertical_interface[i+first+2], vertical_interface[i+first+3], vertical_interface[i+first+4]);
+    //     // for(int r=0;r<60;r+=5)
+    //     // {
+    //     //     printf("kernel vertical_interface CPU (%d %d %d %d) [%d-%d] = %f %f %f %f %f\n",
+    //     //         x, y, side, s, r, r+4, vertical_interface[i+r], vertical_interface[i+r+1], vertical_interface[i+r+2], vertical_interface[i+r+3], vertical_interface[i+r+4]);
+    //     // }
+    // }
 END
 
 horizontal_interface(x, y, side, s)

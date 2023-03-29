@@ -385,32 +385,6 @@ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *i
         true_y += side * (grid.subgridLogicalSize[1]); // Displace to the up if we target the up side
         true_y += (1-side) * (grid.overlapSize[1]); //
 
-        // if(side == 0)
-        // {
-        //     int subgrid_id = 
-        //             c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
-        //             + true_y * grid.subgridTrueSize[0]
-        //             + true_x;
-
-        //     interface_down[id] = subgridWrapped.subgrid[0][subgrid_id];
-        // }
-        // else
-        // {
-        //     int subgrid_id = 
-        //             c * grid.subgridTrueSize[0] * grid.subgridTrueSize[1]
-        //             + true_y * grid.subgridTrueSize[0]
-        //             + true_x;
-
-        //     interface_up[id - 1 * grid.subgridTrueSize[0] * grid.conservativesNumber] = subgridWrapped.subgrid[2][subgrid_id];
-        // }
-
-// good
-// kernel vertical_interface CPU (0 1 1 3) [45-49] = 0.117939 0.118259 0.118584 0.118913 0.119244
-// kernel vertical_interface CPU (0 1 0 3) [45-49] = 0.102232 0.101978 0.101723 0.101467 0.101212
-// bad
-// kernel vertical_interface CPU (0 1 0 3) [45-49] = 0.099287 0.099078 0.098879 0.098692 0.098518
-// kernel vertical_interface CPU (0 1 1 3) [45-49] = 0.121833 0.122129 0.122415 0.122689 0.122952
-
         if(side == 0)
         {
             int subgrid_id =
