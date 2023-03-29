@@ -7,6 +7,10 @@
 #include "LBM_common.h"
 
 
+
+__host__ __device__ void kin_to_fluid(const double *f, double *w);
+__host__ __device__ void fluid_to_kin(const double *w, double *f);
+
 __device__ void d2q9_t0(double *w, double x, double y, int d);
 
 // Initialize all the values including the ghost cells

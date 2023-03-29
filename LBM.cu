@@ -85,7 +85,7 @@ void d2q9_LBM_step_caller(Grid grid,
 
 
 
-__device__
+__host__ __device__
 int get_dir(int i, int j)
 {
     const int dirs[9][2] = {
@@ -103,7 +103,7 @@ int get_dir(int i, int j)
     return dirs[i][j];
 }
 
-__device__
+__host__ __device__
 void fluid_to_kin(const double *w, double *f)
 {
     static const double c2 = 1. / 3.;
@@ -139,7 +139,7 @@ void fluid_to_kin(const double *w, double *f)
     }
 }
 
-__device__
+__host__ __device__
 void kin_to_fluid(const double *f, double *w)
 {
     w[0] = 0;
@@ -153,18 +153,23 @@ void kin_to_fluid(const double *f, double *w)
     }
 }
 
+__device__
+bool is_in_cylinder(double x, double y)
+{
+    return (x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS;
+}
 
 __device__
 void d2q9_t0(double w[3], double x, double y)
 {
     double rho, u, v;
     rho = 1;
-    // u = 0.03;
-    // v = 0.00001; // to get instability
-    u = 0.03 + 0.01*sin(x+2*y) + 0.05*sin(cos(3*x + y*y) + x*x*y); // TODO ERASE
-    v = 0.00001 + 0.01*sin(x*7+2*y)+ 0.05*sin(cos(7*y + y*x) + y*x*y); // TODO ERASE
+    u = 0.03;
+    v = 0.00001; // to get instability
+    // u = 0.03 + 0.01*sin(x+2*y) + 0.05*sin(cos(3*x + y*y) + x*x*y); // TODO ERASE
+    // v = 0.00001 + 0.01*sin(x*7+2*y)+ 0.05*sin(cos(7*y + y*x) + y*x*y); // TODO ERASE
 
-    if ((x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS) {
+    if (is_in_cylinder(x, y)) {
         u = 0;
         v = 0;
     }
@@ -414,6 +419,58 @@ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *i
     }
 }
 
+
+
+
+
+// void d2q9_relax(d2q9 *lbm) {
+
+// #pragma omp for schedule(static) nowait
+//   for (size_t i = 0; i < lbm->nx; i++) {
+//     for (size_t j = 0; j < lbm->ny; j++) {
+//       double f[9];
+//       double feq[9];
+//       for (size_t k = 0; k < 9; k++) {
+//         f[k] = lbm->fnext[k][i * lbm->ny + j];
+//       }
+//       double w[3];
+//       kin_to_fluid(f, w, lbm);
+//       for (size_t k = 0; k < 3; k++) {
+//         lbm->w[k][i * lbm->ny + j] = w[k];
+//         // printf("u=%f\n",w[1]/w[0]);
+//       }
+//       fluid_to_kin(w, feq, lbm);
+//       for (size_t k = 0; k < 9; k++) {
+//         lbm->f[k][i * lbm->ny + j] =
+// 	  _RELAX * feq[k] + (1 - _RELAX) * lbm->fnext[k][i * lbm->ny + j];
+//       }
+//     }
+//   }
+// }
+
+// void d2q9_boundary(d2q9 *lbm) {
+
+// #pragma omp for schedule(static) nowait
+//   for (size_t i = 0; i < lbm->nx; i++) {
+//     for (size_t j = 0; j < lbm->ny; j++) {
+//       double x = i * lbm->dx;
+//       double y = j * lbm->dx;
+//       if (mask(x, y)) {
+//         double wb[3];
+//         imposed_data(x, y, lbm->tnow, wb);
+//         double fb[9];
+//         fluid_to_kin(wb, fb, lbm);
+//         for (size_t k = 0; k < 9; k++) {
+//           lbm->f[k][i * lbm->ny + j] =
+// 	    _RELAX * fb[k] + (1 - _RELAX) * lbm->f[k][i * lbm->ny + j];
+//         }
+//       }
+//     }
+//   }
+// }
+
+
+
 // time step kernel
 __global__
 void d2q9_LBM_step(Grid grid,
@@ -486,15 +543,42 @@ void d2q9_LBM_step(Grid grid,
         
         if(isInComputationArea)
         {
+            // compute x and y as doubles on the whole grid (xg and yg)
+            int true_x = subgrid_true_x;
+            int true_y = subgrid_true_y;
+            int logical_x = true_x - grid.overlapSize[0];
+            int logical_y = true_y - grid.overlapSize[1];
+            int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
+            int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
+            double xg = grid.physicalMinCoords[0] + (((double)xgInt + 0.5) * grid.physicalSize[0] / (double)grid.size[0]);
+            double yg = grid.physicalMinCoords[1] + (((double)ygInt + 0.5) * grid.physicalSize[1] / (double)grid.size[1]);
+
             double w[3];
+
+            // f equilibrium
             kin_to_fluid(&f[0][0], w);
             double feq[3][3];
             fluid_to_kin(w, &feq[0][0]);
+
+            // f fixed (for boundary conditions)
+            double ffixed[3][3];
+            if(is_in_cylinder(xg, yg))
+            {
+                d2q9_t0(w, xg, yg);
+                fluid_to_kin(w, &ffixed[0][0]);
+            }
+
+
             for(int d=0; d<grid.directionsNumber; d++)
             {
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
+
                     f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    if(is_in_cylinder(xg, yg))
+                    {
+                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    }
                 }
             }
         }

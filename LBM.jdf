@@ -639,8 +639,8 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 20;
-    int save_interval = 2;
+    number_of_steps = 200;
+    int save_interval = 10;
 
 
     // Ensure that the configuration is valid
