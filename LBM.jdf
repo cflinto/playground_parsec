@@ -209,8 +209,11 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
                 }
             }
 
-			double value = cd_vector[0][0] + cd_vector[1][0] + cd_vector[2][0] + cd_vector[0][1] + cd_vector[1][1] + cd_vector[2][1] + cd_vector[0][2] + cd_vector[1][2] + cd_vector[2][2];
-            // set value to whatever function of the cd vector you want to plot
+			// double value = cd_vector[0][0] + cd_vector[1][0] + cd_vector[2][0] + cd_vector[0][1] + cd_vector[1][1] + cd_vector[2][1] + cd_vector[0][2] + cd_vector[1][2] + cd_vector[2][2];
+            // // set value to whatever function of the cd vector you want to plot
+            double w[3];
+            kin_to_fluid(cd_vector, w);
+            double value = w[1]*w[1] + w[2]*w[2];
 
             sprintf(buffer, "%.15f\n", value);
             //snprintf(buffer, 256, "0.0\n", 0);
