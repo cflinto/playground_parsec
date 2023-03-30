@@ -39,8 +39,8 @@ Grid newGrid(int rank, int nodes)
     grid.conservativesNumber = 3;
     grid.directionsNumber = 3;
 
-	grid.subgridNumber[0] = 2;
-	grid.subgridNumber[1] = 2;
+	grid.subgridNumber[0] = 4;
+	grid.subgridNumber[1] = 4;
 	grid.subgridOwnedSize[0] = grid.size[0] / grid.subgridNumber[0];
 	grid.subgridOwnedSize[1] = grid.size[1] / grid.subgridNumber[1];
 
@@ -55,15 +55,15 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 4;
+	grid.overlapSize[0] = 5;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
 
 	grid.physicalMinCoords[0] = -1;
-	grid.physicalMinCoords[1] = -1;
-	grid.physicalSize[0] = 2;
-	grid.physicalSize[1] = 2;
+	grid.physicalMinCoords[1] = -4;
+	grid.physicalSize[0] = 8;
+	grid.physicalSize[1] = 8;
 
 	grid.subgridTrueSize[0] = grid.subgridLogicalSize[0] + 2 * grid.overlapSize[0];
 	grid.subgridTrueSize[1] = grid.subgridLogicalSize[1] + 2 * grid.overlapSize[1];
@@ -213,7 +213,8 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
             // // set value to whatever function of the cd vector you want to plot
             double w[3];
             kin_to_fluid(cd_vector, w);
-            double value = w[1]*w[1] + w[2]*w[2];
+            double value = sqrt(w[1]*w[1] + w[2]*w[2]);
+            //double value = w[0];
 
             sprintf(buffer, "%.15f\n", value);
             //snprintf(buffer, 256, "0.0\n", 0);
@@ -456,7 +457,7 @@ RW VERTICAL_INTERFACE
     -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
     -> (side==1) ? INTERFACE_UP LBM_STEP(x, (y+subgrid_number_y-1)%subgrid_number_y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
-BODY
+BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
                 rank, x, y, side, s);
     // if(x==0/* && y==1*/)
@@ -642,8 +643,8 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 200;
-    int save_interval = 10;
+    number_of_steps = 10;
+    int save_interval = 2;
 
 
     // Ensure that the configuration is valid

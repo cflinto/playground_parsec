@@ -156,7 +156,9 @@ void kin_to_fluid(const double *f, double *w)
 __device__
 bool is_in_cylinder(double x, double y)
 {
-    return (x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS;
+    return
+        (x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS;
+        //|| x < -0.9 || x > 0.9 || y < -0.9 || y > 0.9;
 }
 
 __device__
@@ -171,7 +173,6 @@ void d2q9_t0(double w[3], double x, double y)
 
     if (is_in_cylinder(x, y)) {
         u = 0;
-        v = 0;
     }
 
     w[0] = rho;
