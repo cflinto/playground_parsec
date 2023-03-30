@@ -39,8 +39,8 @@ Grid newGrid(int rank, int nodes)
     grid.conservativesNumber = 3;
     grid.directionsNumber = 3;
 
-	grid.subgridNumber[0] = 4;
-	grid.subgridNumber[1] = 4;
+	grid.subgridNumber[0] = 2;
+	grid.subgridNumber[1] = 2;
 	grid.subgridOwnedSize[0] = grid.size[0] / grid.subgridNumber[0];
 	grid.subgridOwnedSize[1] = grid.size[1] / grid.subgridNumber[1];
 
