@@ -299,10 +299,6 @@ RW INTERFACE_UP
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 READ SUBGRID_FROM[d = 0..directions_number-1]
-    // <- (s%overlap_x==0 && s!=0)
-    //     ? SUBGRID_HORIZONTAL_WRITE[d_it = d] write_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x-1)
-    // <- (s==0)
-    //     ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s%save_interval == 0)
         ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, s/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s%overlap_x==0) // && s%save_interval == 0
@@ -519,8 +515,8 @@ RW SUBGRID_SAVE_REDUCE
     -> (s*save_interval < number_of_steps)
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s*save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
         //: SUBGRID_D_OUT WriteBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
-    ->
-        descGridD(subgrid_x, subgrid_y, d)
+    // ->
+    //     descGridD(subgrid_x, subgrid_y, d)
 
 RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
