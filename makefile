@@ -8,6 +8,7 @@ PTGCC=/home/cflint/parsec_project/parsec/build/parsec/interfaces/ptg/ptg-compile
 # PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/home/cflint/parsec_project/parsec/build/parsec/include
 # Set compiler flags and paths
 CFLAGS = -g `pkg-config --cflags parsec`
+NVCCFLAGS = -arch=sm_35 -arch=sm_70
 LDFLAGS = `pkg-config --libs parsec`
 
 # Set library paths and flags for CUDA
@@ -50,8 +51,12 @@ $(C_FILE): $(JDF_FILE) $(H_FILE)
 # Compile the CUDA source file to generate LBM.o
 $(O_FILE): $(CU_FILE) $(H_FILE)
 	@echo "Compiling CUDA file..."
+<<<<<<< HEAD
 	# @echo "CFLAGS: $(CFLAGS)"
 	$(NVCC) $(CFLAGS) $(CUDA_INCLUDES) $(PARSEC_INCLUDES) -c $(CU_FILE) -o $(O_FILE)
+=======
+	$(NVCC) $(CFLAGS) $(NVCCFLAGS) $(CUDA_INCLUDES) -c $(CU_FILE) -o $(O_FILE)
+>>>>>>> my-temporary-work
 
 clean:
 	rm -f $(O_FILE) $(OUTPUT_FILE) $(O_FILE) $(C_FILE) LBM.o

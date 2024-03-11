@@ -56,5 +56,12 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/cflint/parsec/build/install/lib64
 /home/cflint/parsec/build/install/bin/parsec-ptgpp -i LBM.jdf -o LBM
 gcc -O3 $CFLAGS LBM.c -o LBM -L /usr/local/cuda/lib64 -lcudart -lcublas $LDFLAGS
 
+## Benchmark commands, more recent
 
+module load compiler/gcc/9.3.0
+module load mpi/openmpi/4.0.2
+module load build/cmake/3.26.0
+module load compiler/cuda/11.7
 
+# On plafrim, you always need to specify the CUDA version:
+cmake -DCUDAToolkit_NVCC_EXECUTABLE=/usr/local/cuda-11.7/bin_nvcc ..
