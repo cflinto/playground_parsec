@@ -4,6 +4,7 @@ NVCC = nvcc
 
 # Set compiler flags and paths
 CFLAGS = -g `pkg-config --cflags parsec`
+NVCCFLAGS = -arch=sm_35 -arch=sm_70
 LDFLAGS = `pkg-config --libs parsec`
 PKG_CONFIG_PATH := $(PKG_CONFIG_PATH):/usr/local/lib/pkgconfig
 
@@ -26,7 +27,7 @@ all: $(OUTPUT_FILE)
 # Link the object files to generate the executable
 $(OUTPUT_FILE): $(C_FILE) $(O_FILE)
 	@echo "Linking object files..."
-	$(NVCC) $(CFLAGS) $(O_FILE) $(C_FILE) -o $(OUTPUT_FILE) -L$(CUDA_LIB_DIR) $(CUDA_LIBS) $(LDFLAGS)
+	$(NVCC) $(CFLAGS) $(NVCCFLAGS) $(O_FILE) $(C_FILE) -o $(OUTPUT_FILE) -L$(CUDA_LIB_DIR) $(CUDA_LIBS) $(LDFLAGS)
 
 # Compile the JDF file to generate LBM.c
 $(C_FILE): $(JDF_FILE) $(H_FILE)
@@ -36,7 +37,7 @@ $(C_FILE): $(JDF_FILE) $(H_FILE)
 # Compile the CUDA source file to generate LBM.o
 $(O_FILE): $(CU_FILE) $(H_FILE)
 	@echo "Compiling CUDA file..."
-	$(NVCC) $(CFLAGS) $(CUDA_INCLUDES) -c $(CU_FILE) -o $(O_FILE)
+	$(NVCC) $(CFLAGS) $(NVCCFLAGS) $(CUDA_INCLUDES) -c $(CU_FILE) -o $(O_FILE)
 
 clean:
 	rm -f $(O_FILE) $(OUTPUT_FILE) $(O_FILE) $(C_FILE) LBM.o
