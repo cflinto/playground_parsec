@@ -63,5 +63,12 @@ module load mpi/openmpi/4.0.2
 module load build/cmake/3.26.0
 module load compiler/cuda/11.7
 
-# On plafrim, you always need to specify the CUDA version:
+# On plafrim, you need to specify the CUDA version:
 cmake -DCUDAToolkit_NVCC_EXECUTABLE=/usr/local/cuda-11.7/bin_nvcc ..
+
+# on parsec:
+make parsec-ptgpp # only builds ptgpp
+
+# on playground_parsec:
+PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/home/cflint/parsec_project/parsec/build/parsec/include make # crashes on the first try, but works on the second try
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/cflint/parsec_project/parsec/build/parsec ./LBM
