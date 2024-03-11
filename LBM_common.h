@@ -23,7 +23,7 @@
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (512)
+#define PROBLEM_SIZE_X (1024)
 #define PROBLEM_SIZE_Y (512)
 #define PROBLEM_SIZE_Z (8)
 

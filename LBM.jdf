@@ -164,10 +164,12 @@ static void destroy_cublas_handle(void *_h, void *_n)
 ///////////////  View functions  /////////////////
 //////////////////////////////////////////////////
 
+#define MPI_WRITE_BUFFER_SIZE 1024*1024*1024
+
 void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 {
 	MPI_File gplt;
-    char buffer[256];
+    char *buffer = malloc(MPI_WRITE_BUFFER_SIZE);
     MPI_Status status;
 
     MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_CREATE|MPI_MODE_WRONLY,MPI_INFO_NULL, &gplt);
@@ -191,6 +193,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
     sprintf(buffer, "\n");
     MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
 
+    int counter = 0;
 	for (int y = 0; y < grid.sizeOfSavedData[1]; y++)
 	{
 		for (int x = 0; x < grid.sizeOfSavedData[0]; x++)
@@ -216,13 +219,23 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
             double value = sqrt(w[1]*w[1] + w[2]*w[2]);
             //double value = w[0];
 
-            sprintf(buffer, "%.15f\n", value);
-            //snprintf(buffer, 256, "0.0\n", 0);
-            MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+            counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "%f ", value);
+            
+            if(counter == MPI_WRITE_BUFFER_SIZE-1)
+            {
+                MPI_File_write(gplt, buffer, MPI_WRITE_BUFFER_SIZE, MPI_CHAR, &status);
+                counter = 0;
+            }
         }
 	}
 
+    if(counter != 0)
+    {
+        MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status);
+    }
+
 	MPI_File_close(&gplt);
+    free(buffer);
 }
 
 %}
@@ -299,10 +312,6 @@ RW INTERFACE_UP
         ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
 
 READ SUBGRID_FROM[d = 0..directions_number-1]
-    // <- (s%overlap_x==0 && s!=0)
-    //     ? SUBGRID_HORIZONTAL_WRITE[d_it = d] write_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x-1)
-    // <- (s==0)
-    //     ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s%save_interval == 0)
         ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, s/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
     <- (s%overlap_x==0) // && s%save_interval == 0
@@ -519,8 +528,8 @@ RW SUBGRID_SAVE_REDUCE
     -> (s*save_interval < number_of_steps)
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s*save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
         //: SUBGRID_D_OUT WriteBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
-    ->
-        descGridD(subgrid_x, subgrid_y, d)
+    // ->
+    //     descGridD(subgrid_x, subgrid_y, d)
 
 RW SUBGRID_SAVE_REDUCED
     <- (subgrid_x==0 && subgrid_y==0 && d!=0)
@@ -643,8 +652,8 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 10;
-    int save_interval = 2;
+    number_of_steps = 100;
+    int save_interval = 10;
 
 
     // Ensure that the configuration is valid
