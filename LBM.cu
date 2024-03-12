@@ -83,7 +83,7 @@ void d2q9_LBM_step_caller(Grid grid,
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
     recordStart("LBM_step");
-    d2q9_LBM_step<<<256, 256>>>(grid,
+    d2q9_LBM_step<<<16384, 1024>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
                 horizontal_uncomputed_number, vertical_uncomputed_number,

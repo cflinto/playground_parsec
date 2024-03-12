@@ -92,25 +92,18 @@ public:
         printf("#############################################\n");
         printf("Benchmark summary:\n");
         printf("#############################################\n");
-        for (int device = 0; device < MAX_CUDA_DEVICES; device++)
+
+        float sum_all_times = 0;
+        for (auto &it : kernelInfos)
         {
-            if (kernelTimers[device].empty())
-            {
-                continue;
-            }
-            printf("##Device %d##\n");
-            float sum_all_times = 0;
-            for (auto &it : kernelInfos)
-            {
-                sum_all_times += it.second.time;
-            }
-            for (auto &it : kernelInfos)
-            {
-                printf("%s: %f s (%d calls), avg: %f ms, proportion: %.2f\%\n",
-                    it.second.name.c_str(), it.second.time / 1000.0f, it.second.count, it.second.time / it.second.count, it.second.time / sum_all_times * 100);
-            }
-            printf("\n");
-    }
+            sum_all_times += it.second.time;
+        }
+        for (auto &it : kernelInfos)
+        {
+            printf("%s: %f s (%d calls), avg: %f ms, proportion: %.2f\%\n",
+                it.second.name.c_str(), it.second.time / 1000.0f, it.second.count, it.second.time / it.second.count, it.second.time / sum_all_times * 100);
+        }
+        printf("\n");
     }
 
     static void destroy()
@@ -141,7 +134,7 @@ extern "C"
     {
         int device;
         gpuErrChk(cudaGetDevice(&device));
-        
+
         BenchmarkSummary_cpp::getInstance().addKernelType(name, device);
     }
 
