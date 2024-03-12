@@ -6,6 +6,12 @@
 
 #include "LBM_common.h"
 
+#define gpuErrchk(ans)                        \
+	{                                         \
+		gpuAssert((ans), __FILE__, __LINE__, true); \
+	}
+
+void gpuAssert(cudaError_t code, const char *file, int line, bool abort);
 
 
 __host__ __device__ void kin_to_fluid(const double *f, double *w);

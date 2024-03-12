@@ -1,15 +1,20 @@
 extern "C" {
 #include "LBM.cuh"
 }
+#include "BenchmarkSummary.cuh"
 
 void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d)
 {
+    recordStart("initialize");
     d2q9_initial_value_d<<<256, 256>>>(grid, subgrid, subgridX, subgridY, d);
+    recordEnd("initialize");
 }
 
 void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d)
 {
+    recordStart("save_reduce");
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
+    recordEnd("save_reduce");
 }
 
 void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
@@ -21,7 +26,9 @@ void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *i
         subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
     }
 
+    recordStart("read_horizontal_slices");
     d2q9_read_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    recordEnd("read_horizontal_slices");
 }
 
 void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
@@ -33,7 +40,9 @@ void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *
         subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
     }
 
+    recordStart("write_horizontal_slices");
     d2q9_write_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    recordEnd("write_horizontal_slices");
 }
 
 void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY)
@@ -45,7 +54,9 @@ void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *int
         subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
     }
 
+    recordStart("read_vertical_slices");
     d2q9_read_vertical_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_down, interface_up, subgridX, subgridY);
+    recordEnd("read_vertical_slices");
 }
 
 void d2q9_LBM_step_caller(Grid grid,
@@ -71,6 +82,7 @@ void d2q9_LBM_step_caller(Grid grid,
     // printf("d2q9_LBM_step_caller: has_from_interface_horizontal=%d, has_from_interface_vertical=%d, has_to_interface_horizontal=%d, has_to_interface_vertical=%d\n",
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
+    recordStart("LBM_step");
     d2q9_LBM_step<<<256, 256>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
@@ -81,6 +93,7 @@ void d2q9_LBM_step_caller(Grid grid,
                 has_to_interface_vertical,
                 interface_down, interface_up,
                 subgridX, subgridY);
+    recordEnd("LBM_step");
 }
 
 
