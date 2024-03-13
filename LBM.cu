@@ -230,7 +230,8 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
         for(int c=0;c<grid.conservativesNumber;++c)
         {
             int subgrid_id = c * cellNum + id;
-            subgrid[subgrid_id] = f[d][c];
+            // subgrid[subgrid_id] = f[d][c]; // TODO !!!
+            subgrid[subgrid_id] = c + d*10;
         }
     }
 }
