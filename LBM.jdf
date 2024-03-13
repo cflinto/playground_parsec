@@ -564,7 +564,7 @@ BODY [type=CUDA]
     d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
 
     // For debugging:
-    sprintf(current_filename, "data_t=%.4f_reduc_%d.dat", t, d+subgrid_y*gridParameters.directionsNumber+subgrid_x*gridParameters.directionsNumber*subgrid_number_y);
+    sprintf(current_filename, "data_t=%.4f_reduc_%d.dat", t, subgrid_x+subgrid_y*subgrid_number_x+d*subgrid_number_x*subgrid_number_y);
     void *subgrid_reduced_host = malloc(gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*gridParameters.directionsNumber*sizeof(double));
     gpuErrchk(cudaMemcpy(subgrid_reduced_host, subgrid_reduced, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*gridParameters.directionsNumber*sizeof(double), cudaMemcpyDeviceToHost));
     d2q9_view_python(current_filename, gridParameters, subgrid_reduced_host);
