@@ -23,8 +23,8 @@
 
 #define MAX_SUBGRIDS 256
 
-#define PROBLEM_SIZE_X (1024*8)
-#define PROBLEM_SIZE_Y (512*8)
+#define PROBLEM_SIZE_X (1024*4)
+#define PROBLEM_SIZE_Y (512*4)
 #define PROBLEM_SIZE_Z (8)
 
 #define SAVED_DATA_SIZE_X (PROBLEM_SIZE_X)
