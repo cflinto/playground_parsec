@@ -551,13 +551,26 @@ BODY [type=CUDA]
     double *subgrid_reduced = SUBGRID_SAVE_REDUCED;
     double *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
 
+    char current_filename[256];
+    double dt = get_dt(gridParameters);
+    double t = (s*save_interval)*dt;
+
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
 
-    fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d) (subgrid_to_reduce=%p, subgrid_reduced=%p)\n",
-               rank, subgrid_x, subgrid_y, d, s, subgrid_to_reduce, subgrid_reduced);
+    fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d) (subgrid_to_reduce=%p, subgrid_reduced=%p, device_id=%d)\n",
+               rank, subgrid_x, subgrid_y, d, s, subgrid_to_reduce, subgrid_reduced, cuda_device->cuda_index);
 
     d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
+
+    // For debugging:
+    sprintf(current_filename, "data_t=%.4f_reduc_%d.dat", t, d+subgrid_y*gridParameters.directionsNumber+subgrid_x*gridParameters.directionsNumber*subgrid_number_y);
+    void *subgrid_reduced_host = malloc(gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*gridParameters.directionsNumber*sizeof(double));
+    gpuErrchk(cudaMemcpy(subgrid_reduced_host, subgrid_reduced, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*gridParameters.directionsNumber*sizeof(double), cudaMemcpyDeviceToHost));
+    d2q9_view_python(current_filename, gridParameters, subgrid_reduced_host);
+    free(subgrid_reduced_host);
+    gpuErrchk(cudaDeviceSynchronize());
+    gpuErrchk(cudaPeekAtLastError());
 END
 
 save_file(s)
@@ -648,7 +661,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 100;
+    number_of_steps = 500;
     int save_interval = 10;
 
 
