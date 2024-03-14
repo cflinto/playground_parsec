@@ -584,7 +584,7 @@ BODY [type=CUDA]
         gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(double)));
     }
 
-    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
+    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_number_y-1-subgrid_y, d);
 END
 
 save_file(s)
@@ -675,7 +675,7 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 500;
+    number_of_steps = 20000;
     int save_interval = 100;
 
 
