@@ -7,7 +7,7 @@ PTGCC=/home/cflint/parsec_project/parsec/build/parsec/interfaces/ptg/ptg-compile
 # For some reason, the .c file is in build/parsec/include on plafrim
 # PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/home/cflint/parsec_project/parsec/build/parsec/include
 # Set compiler flags and paths
-CFLAGS = -O3 `pkg-config --cflags parsec`
+CFLAGS = -g `pkg-config --cflags parsec`
 NVCCFLAGS = -arch=sm_35 -arch=sm_70
 LDFLAGS = `pkg-config --libs parsec`
 

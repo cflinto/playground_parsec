@@ -51,7 +51,7 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 32;
+	grid.overlapSize[0] = 5;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
@@ -160,15 +160,20 @@ static void destroy_cublas_handle(void *_h, void *_n)
 ///////////////  View functions  /////////////////
 //////////////////////////////////////////////////
 
-#define MPI_WRITE_BUFFER_SIZE 1024*1024*1024
+#define MPI_WRITE_BUFFER_SIZE 1024
 
 void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 {
 	MPI_File gplt;
-    char *buffer = malloc(MPI_WRITE_BUFFER_SIZE);
     MPI_Status status;
 
-    MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_CREATE|MPI_MODE_WRONLY,MPI_INFO_NULL, &gplt);
+    if(MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_CREATE|MPI_MODE_WRONLY,MPI_INFO_NULL, &gplt) != MPI_SUCCESS)
+    {
+        fprintf(stderr, "Error opening file %s\n", filename);
+        return;
+    }
+
+    char *buffer = malloc(MPI_WRITE_BUFFER_SIZE);
 
 	double dx = grid.physicalSize[0] / (double)grid.sizeOfSavedData[0];
 	double dy = grid.physicalSize[1] / (double)grid.sizeOfSavedData[1];
@@ -188,6 +193,8 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 	}
     sprintf(buffer, "\n");
     MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+
+    MPI_File_sync(gplt);
 
     int counter = 0;
 	for (int y = 0; y < grid.sizeOfSavedData[1]; y++)
@@ -217,20 +224,33 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 
             counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "%f ", value);
             
-            if(counter == MPI_WRITE_BUFFER_SIZE-1)
+            if(counter >= MPI_WRITE_BUFFER_SIZE-32) // Assuming a double is no more than 29 characters
             {
-                MPI_File_write(gplt, buffer, MPI_WRITE_BUFFER_SIZE, MPI_CHAR, &status);
+                if(MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status ) != MPI_SUCCESS)
+                {
+                    fprintf(stderr, "Error writing to file %s: error %d\n", filename, status.MPI_ERROR);
+                }
+        MPI_File_sync(gplt);
                 counter = 0;
             }
         }
+        counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "\n");
 	}
 
     if(counter != 0)
     {
-        MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status);
+        if(MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status) != MPI_SUCCESS)
+        {
+            fprintf(stderr, "Error writing to file %s: error %d\n", filename, status.MPI_ERROR);
+        }
     }
 
-	MPI_File_close(&gplt);
+    MPI_File_sync(gplt);
+
+	if(MPI_File_close(&gplt) != MPI_SUCCESS)
+    {
+        fprintf(stderr, "Error closing file %s\n", filename);
+    }
     free(buffer);
 }
 
@@ -557,6 +577,12 @@ BODY [type=CUDA]
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d) (subgrid_to_reduce=%p, subgrid_reduced=%p)\n",
                rank, subgrid_x, subgrid_y, d, s, subgrid_to_reduce, subgrid_reduced);
 
+    if(subgrid_x==0 && subgrid_y==0 && d==0)
+    {
+        // Set the initial values to zero
+        gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(double)));
+    }
+
     d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y, d);
 END
 
@@ -648,8 +674,8 @@ int main(int argc, char *argv[])
 
     double tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 500;
-    int save_interval = 100;
+    number_of_steps = 50;
+    int save_interval = 10;
 
 
     // Ensure that the configuration is valid
