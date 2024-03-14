@@ -584,7 +584,14 @@ BODY [type=CUDA]
         gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(double)));
     }
 
-    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_number_y-1-subgrid_y, d);
+    int subgrid_y_corrected = subgrid_y;
+    if(subgrid_number_y%2==1)
+    {
+        // This tinkering works perfectly but is completely illogical
+        // It suggests that some part of the code does not work as intended
+        subgrid_y_corrected = subgrid_number_y-1-subgrid_y;
+    }
+    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y_corrected, d);
 END
 
 save_file(s)
