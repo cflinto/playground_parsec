@@ -3,21 +3,21 @@ extern "C" {
 }
 #include "BenchmarkSummary.cuh"
 
-void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d)
+void d2q9_initial_value_d_caller(Grid grid, PRECISION *subgrid, int subgridX, int subgridY, int d)
 {
     recordStart("initialize");
     d2q9_initial_value_d<<<256, 256>>>(grid, subgrid, subgridX, subgridY, d);
     recordEnd("initialize");
 }
 
-void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d)
+void d2q9_save_reduce_caller(Grid grid, PRECISION *base_subgrid, PRECISION *reduced_subgrid, int subgridX, int subgridY, int d)
 {
     recordStart("save_reduce");
     d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
     recordEnd("save_reduce");
 }
 
-void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
+void d2q9_read_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY)
 {
     // wrap the array
     SubgridArray subgrid_D_wrapped;
@@ -31,7 +31,7 @@ void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *i
     recordEnd("read_horizontal_slices");
 }
 
-void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY)
+void d2q9_write_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY)
 {
     // wrap the array
     SubgridArray subgrid_D_wrapped;
@@ -45,7 +45,7 @@ void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *
     recordEnd("write_horizontal_slices");
 }
 
-void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY)
+void d2q9_read_vertical_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_down, PRECISION *interface_up, int subgridX, int subgridY)
 {
     // wrap the array
     SubgridArray subgrid_D_wrapped;
@@ -60,14 +60,14 @@ void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *int
 }
 
 void d2q9_LBM_step_caller(Grid grid,
-                double **subgrid_FROM_D,
-                double **subgrid_TO_D,
+                PRECISION **subgrid_FROM_D,
+                PRECISION **subgrid_TO_D,
                 int horizontal_uncomputed_number, int vertical_uncomputed_number,
                 bool has_from_interface_horizontal,
                 bool has_from_interface_vertical,
                 bool has_to_interface_horizontal,
                 bool has_to_interface_vertical,
-                double *interface_down, double *interface_up,
+                PRECISION *interface_down, PRECISION *interface_up,
                 int subgridX, int subgridY)
 {
     // wrap the arrays
@@ -83,7 +83,8 @@ void d2q9_LBM_step_caller(Grid grid,
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
     recordStart("LBM_step");
-    d2q9_LBM_step<<<4096*2, 1024>>>(grid,
+    d2q9_LBM_step<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
+                1024*16, 256>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
                 horizontal_uncomputed_number, vertical_uncomputed_number,
@@ -94,6 +95,8 @@ void d2q9_LBM_step_caller(Grid grid,
                 interface_down, interface_up,
                 subgridX, subgridY);
     recordEnd("LBM_step");
+    gpuErrchk(cudaPeekAtLastError());
+
 }
 
 
@@ -117,13 +120,13 @@ int get_dir(int i, int j)
 }
 
 __host__ __device__
-void fluid_to_kin(const double *w, double *f)
+void fluid_to_kin(const PRECISION *w, PRECISION *f)
 {
-    static const double c2 = 1. / 3.;
-    double dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
+    static const PRECISION c2 = 1. / 3.;
+    PRECISION dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
 
     l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
-    double l2_ov_c2 = l2 / c2;
+    PRECISION l2_ov_c2 = l2 / c2;
 
     l4 = l2 * l2;
     c4 = c2 * c2;
@@ -153,7 +156,7 @@ void fluid_to_kin(const double *w, double *f)
 }
 
 __host__ __device__
-void kin_to_fluid(const double *f, double *w)
+void kin_to_fluid(const PRECISION *f, PRECISION *w)
 {
     w[0] = 0;
     w[1] = 0;
@@ -167,7 +170,7 @@ void kin_to_fluid(const double *f, double *w)
 }
 
 __device__
-bool is_in_cylinder(double x, double y)
+bool is_in_cylinder(PRECISION x, PRECISION y)
 {
     return
         (x - CYLINDER_CENTER_X) * (x - CYLINDER_CENTER_X) + (y - CYLINDER_CENTER_Y) * (y - CYLINDER_CENTER_Y) < CYLINDER_RADIUS * CYLINDER_RADIUS;
@@ -175,9 +178,9 @@ bool is_in_cylinder(double x, double y)
 }
 
 __device__
-void d2q9_t0(double w[3], double x, double y)
+void d2q9_t0(PRECISION w[3], PRECISION x, PRECISION y)
 {
-    double rho, u, v;
+    PRECISION rho, u, v;
     rho = 1;
     u = 0.03;
     v = 0.00001; // to get instability
@@ -200,7 +203,7 @@ void d2q9_t0(double w[3], double x, double y)
 
 // Initialize all the values including the ghost cells
 __global__
-void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY, int d)
+void d2q9_initial_value_d(Grid grid, PRECISION *subgrid, int subgridX, int subgridY, int d)
 {
     (void)d; // same for all directions
 
@@ -219,12 +222,12 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
         int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
         int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
 
-        double xg = grid.physicalMinCoords[0] + (((double)xgInt + 0.5) * grid.physicalSize[0] / (double)grid.size[0]);
-        double yg = grid.physicalMinCoords[1] + (((double)ygInt + 0.5) * grid.physicalSize[1] / (double)grid.size[1]);
+        PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+        PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
-        double w[3];
+        PRECISION w[3];
         d2q9_t0(w, xg, yg);
-        double f[3][3];
+        PRECISION f[3][3];
         fluid_to_kin(w, &f[0][0]);
 
         for(int c=0;c<grid.conservativesNumber;++c)
@@ -238,7 +241,7 @@ void d2q9_initial_value_d(Grid grid, double *subgrid, int subgridX, int subgridY
 // kernel used for the reduction for the save
 // agregates the values in the stencil by doing an average
 __global__
-void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d)
+void d2q9_save_reduce(Grid grid, PRECISION *base_subgrid, PRECISION *reduced_subgrid, int subgridX, int subgridY, int d)
 {
     int stride = blockDim.x * gridDim.x;
 
@@ -259,7 +262,7 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
         int global_stencil_x = local_stencil_x + subgridX * stencil_num_x_in_subgrid;
         int global_stencil_y = local_stencil_y + subgridY * stencil_num_y_in_subgrid;
 
-        double average = 0;
+        PRECISION average = 0;
 
         for (int i = 0; i < grid.saveStencilSize[0]; i++) {
             for (int j = 0; j < grid.saveStencilSize[1]; j++) {
@@ -286,7 +289,7 @@ void d2q9_save_reduce(Grid grid, double *base_subgrid, double *reduced_subgrid, 
 
 
 // Read the subgrid and write to the horizontal slices
-__global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgridWrapped, double *interface_left, double *interface_right, int subgridX, int subgridY)
+__global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgridWrapped, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY)
 {
     int stride = blockDim.x * gridDim.x;
 
@@ -325,7 +328,7 @@ __global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgridWrapp
 }
 
 // Write to the subgrid from the horizontal slices
-__global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgridWrapped, double *interface_left, double *interface_right, int subgridX, int subgridY)
+__global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgridWrapped, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY)
 {
     int stride = blockDim.x * gridDim.x;
 
@@ -384,7 +387,7 @@ __global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgridWrap
 // Write the upper and lower slices to corresponding interface
 // Only the relevant direction is written, i.e., subgrid_d.subgrid[0] goes to interface_down and subgrid_d.subgrid[2] goes to interface_up
 __global__
-void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *interface_down, double *interface_up, int subgridX, int subgridY)
+void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, PRECISION *interface_down, PRECISION *interface_up, int subgridX, int subgridY)
 {
     int stride = blockDim.x * gridDim.x;
 
@@ -442,12 +445,12 @@ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *i
 // #pragma omp for schedule(static) nowait
 //   for (size_t i = 0; i < lbm->nx; i++) {
 //     for (size_t j = 0; j < lbm->ny; j++) {
-//       double f[9];
-//       double feq[9];
+//       PRECISION f[9];
+//       PRECISION feq[9];
 //       for (size_t k = 0; k < 9; k++) {
 //         f[k] = lbm->fnext[k][i * lbm->ny + j];
 //       }
-//       double w[3];
+//       PRECISION w[3];
 //       kin_to_fluid(f, w, lbm);
 //       for (size_t k = 0; k < 3; k++) {
 //         lbm->w[k][i * lbm->ny + j] = w[k];
@@ -467,12 +470,12 @@ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, double *i
 // #pragma omp for schedule(static) nowait
 //   for (size_t i = 0; i < lbm->nx; i++) {
 //     for (size_t j = 0; j < lbm->ny; j++) {
-//       double x = i * lbm->dx;
-//       double y = j * lbm->dx;
+//       PRECISION x = i * lbm->dx;
+//       PRECISION y = j * lbm->dx;
 //       if (mask(x, y)) {
-//         double wb[3];
+//         PRECISION wb[3];
 //         imposed_data(x, y, lbm->tnow, wb);
-//         double fb[9];
+//         PRECISION fb[9];
 //         fluid_to_kin(wb, fb, lbm);
 //         for (size_t k = 0; k < 9; k++) {
 //           lbm->f[k][i * lbm->ny + j] =
@@ -495,7 +498,7 @@ void d2q9_LBM_step(Grid grid,
                         bool has_from_interface_vertical,
                         bool has_to_interface_horizontal,
                         bool has_to_interface_vertical,
-                        double *interface_down, double *interface_up,
+                        PRECISION *interface_down, PRECISION *interface_up,
                         int subgridX, int subgridY)
 {
     int stride = blockDim.x * gridDim.x;
@@ -514,12 +517,12 @@ void d2q9_LBM_step(Grid grid,
             );
 
 
-        double f[3][3];
+        PRECISION f[3][3];
 
         // shift
         for(int d=0; d<grid.directionsNumber; d++)
         {
-            double *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
+            PRECISION *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
 
             for(int c=0; c<grid.conservativesNumber; c++)
             {
@@ -557,25 +560,25 @@ void d2q9_LBM_step(Grid grid,
         
         if(isInComputationArea)
         {
-            // compute x and y as doubles on the whole grid (xg and yg)
+            // compute x and y as PRECISIONs on the whole grid (xg and yg)
             int true_x = subgrid_true_x;
             int true_y = subgrid_true_y;
             int logical_x = true_x - grid.overlapSize[0];
             int logical_y = true_y - grid.overlapSize[1];
             int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
             int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
-            double xg = grid.physicalMinCoords[0] + (((double)xgInt + 0.5) * grid.physicalSize[0] / (double)grid.size[0]);
-            double yg = grid.physicalMinCoords[1] + (((double)ygInt + 0.5) * grid.physicalSize[1] / (double)grid.size[1]);
+            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
-            double w[3];
+            PRECISION w[3];
 
             // f equilibrium
             kin_to_fluid(&f[0][0], w);
-            double feq[3][3];
+            PRECISION feq[3][3];
             fluid_to_kin(w, &feq[0][0]);
 
             // f fixed (for boundary conditions)
-            double ffixed[3][3];
+            PRECISION ffixed[3][3];
             if(is_in_cylinder(xg, yg))
             {
                 d2q9_t0(w, xg, yg);
@@ -596,7 +599,7 @@ void d2q9_LBM_step(Grid grid,
                 }
             }
         }
-        
+
         int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
         int position_in_interface_right_y = subgrid_true_y;
 
@@ -607,7 +610,7 @@ void d2q9_LBM_step(Grid grid,
 
         for(int d=0; d<grid.directionsNumber; d++)
         {
-            double *target_TO_subgrid = subgrid_TO_D.subgrid[d];
+            PRECISION *target_TO_subgrid = subgrid_TO_D.subgrid[d];
             for(int c=0; c<grid.conservativesNumber; c++)
             {
                 /*if(has_to_interface_vertical && position_in_interface_down_x >= 0 && position_in_interface_down_x < grid.overlapSize[1])
@@ -662,7 +665,7 @@ void d2q9_LBM_step_optimized(Grid grid,
                         bool has_from_interface_vertical,
                         bool has_to_interface_horizontal,
                         bool has_to_interface_vertical,
-                        double *interface_down, double *interface_up,
+                        PRECISION *interface_down, PRECISION *interface_up,
                         int subgridX, int subgridY)
 {
     int x_min = horizontal_uncomputed_number;
@@ -674,76 +677,88 @@ void d2q9_LBM_step_optimized(Grid grid,
     {
         for(int xt=x_min+threadIdx.x;xt<=x_max;xt+=blockDim.x)
         {
-            double f[3][3];
-
+            PRECISION f[3][3];
             // shift
             for(int d=0; d<grid.directionsNumber; d++)
             {
-                double *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
+                PRECISION *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
 
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
                     int i=c+d*grid.conservativesNumber;
 
-                    int offset_x = get_dir(i,0);
-                    int offset_y = get_dir(i,1);
+                    int offset_x = -get_dir(i,0);
+                    int offset_y = -get_dir(i,1);
 
-                    if(offset_y == -1 && yt==y_min)
-                    {
-                        //f[d][c] = interface_down[c*grid.subgridTrueSize[0] + xt];
-                        f[d][c] = 0.0;
-                    }
-                    else if(offset_y == 1 && yt==y_max)
-                    {
-                        //f[d][c] = interface_up[c*grid.subgridTrueSize[0] + xt];
-                        f[d][c] = 0.0;
-                    }
-                    else
-                    {
-                        int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
-                        f[d][c] = target_FROM_subgrid[true_id];
-                    }
+                    // if(has_from_interface_vertical && d==2 && yt==y_min)
+                    // {
+                    //     f[d][c] = interface_down[c*grid.subgridTrueSize[0] + xt];
+                    //     // f[d][c] = 0.0;
+                    // }
+                    // else if(has_from_interface_vertical && d==0 && yt==y_max)
+                    // {
+                    //     f[d][c] = interface_up[c*grid.subgridTrueSize[0] + xt];
+                    //     // f[d][c] = 0.0;
+                    // }
+                    // else
+                    // {
+                    //     int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
+                    //     f[d][c] = target_FROM_subgrid[true_id];
+                    // }
+                    int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
+                    f[d][c] = target_FROM_subgrid[true_id];
                 }
             }
 
-            int xg = xt + subgridX * grid.subgridOwnedSize[0];
-            int yg = yt + subgridY * grid.subgridOwnedSize[1];
+            // int xgInt = xt + subgridX * grid.subgridOwnedSize[0];
+            // int ygInt = yt + subgridY * grid.subgridOwnedSize[1];
+            // PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            // PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
-            double w[3];
+            // PRECISION w[3];
 
-            // f equilibrium
-            kin_to_fluid(&f[0][0], w);
-            double feq[3][3];
-            fluid_to_kin(w, &feq[0][0]);
+            // // f equilibrium
+            // kin_to_fluid(&f[0][0], w);
+            // PRECISION feq[3][3];
+            // fluid_to_kin(w, &feq[0][0]);
 
-            // f fixed (for boundary conditions)
-            double ffixed[3][3];
-            if(is_in_cylinder(xg, yg))
-            {
-                d2q9_t0(w, xg, yg);
-                fluid_to_kin(w, &ffixed[0][0]);
-            }
+            // // f fixed (for boundary conditions)
+            // PRECISION ffixed[3][3];
+            // if(is_in_cylinder(xg, yg))
+            // {
+            //     d2q9_t0(w, xg, yg);
+            //     fluid_to_kin(w, &ffixed[0][0]);
+            // }
 
 
-            for(int d=0; d<grid.directionsNumber; d++)
-            {
-                for(int c=0; c<grid.conservativesNumber; c++)
-                {
-
-                    f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
-                    if(is_in_cylinder(xg, yg))
-                    {
-                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
-                    }
-                }
-            }
+            // for(int d=0; d<grid.directionsNumber; d++)
+            // {
+            //     for(int c=0; c<grid.conservativesNumber; c++)
+            //     {
+            //         f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+            //         if(is_in_cylinder(xg, yg))
+            //         {
+            //             f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+            //         }
+            //     }
+            // }
 
             // Write to the subgrid
             for(int d=0; d<grid.directionsNumber; d++)
             {
-                double *target_TO_subgrid = subgrid_TO_D.subgrid[d];
+                PRECISION *target_TO_subgrid = subgrid_TO_D.subgrid[d];
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
+                    // target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
+
+                    // if(has_to_interface_vertical && d==0 && yt==y_min)
+                    // {
+                    //     interface_down[c*grid.subgridTrueSize[0] + xt] = f[d][c];
+                    // }
+                    // if(has_to_interface_vertical && d==2 && yt==y_max)
+                    // {
+                    //     interface_up[c*grid.subgridTrueSize[0] + xt] = f[d][c];
+                    // }
                     target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
                 }
             }

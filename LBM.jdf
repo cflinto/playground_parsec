@@ -84,7 +84,11 @@ Grid newGrid(int rank, int nodes)
 
     // Initialize the grid
     parsec_multidimensional_grid_init((parsec_multidimensional_grid_t*)grid.desc,
+#if defined(DOUBLE_PRECISION)
                             PARSEC_MATRIX_DOUBLE,
+#else
+                            PARSEC_MATRIX_FLOAT,
+#endif
                             nodes, rank,
                             DIMENSIONS_NUMBER+1, DIMENSIONS_NUMBER,
                             grid.subgridNumber[0], grid.subgridNumber[1], grid.directionsNumber,
@@ -101,20 +105,20 @@ Grid newGrid(int rank, int nodes)
 	return grid;
 }
 
-double get_dt(Grid grid)
+PRECISION get_dt(Grid grid)
 {
-    double delta_x = grid.physicalSize[0] / (double)grid.size[0];
+    PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
     return CFL * delta_x / MAXIMUM_VELOCITY;
 }
 
 typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
                             cublasOperation_t transa, cublasOperation_t transb,
                             int m, int n, int k,
-                            const double *alpha,
-                            const double *A, int lda,
-                            const double *B, int ldb,
-                            const double *beta,
-                            double       *C, int ldc);
+                            const PRECISION *alpha,
+                            const PRECISION *A, int lda,
+                            const PRECISION *B, int ldb,
+                            const PRECISION *beta,
+                            PRECISION       *C, int ldc);
 
 
 #if defined(PARSEC_HAVE_CUDA)
@@ -162,7 +166,7 @@ static void destroy_cublas_handle(void *_h, void *_n)
 
 #define MPI_WRITE_BUFFER_SIZE 1024
 
-void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
+void d2q9_view_python(char *filename, Grid grid, PRECISION *data_grid_to_save)
 {
 	MPI_File gplt;
     MPI_Status status;
@@ -175,8 +179,8 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 
     char *buffer = malloc(MPI_WRITE_BUFFER_SIZE);
 
-	double dx = grid.physicalSize[0] / (double)grid.sizeOfSavedData[0];
-	double dy = grid.physicalSize[1] / (double)grid.sizeOfSavedData[1];
+	PRECISION dx = grid.physicalSize[0] / (PRECISION)grid.sizeOfSavedData[0];
+	PRECISION dy = grid.physicalSize[1] / (PRECISION)grid.sizeOfSavedData[1];
     assert(abs(dx - dy) < 1e-10);
 
 	for (size_t x = 0; x < grid.sizeOfSavedData[0]; x++)
@@ -202,7 +206,7 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
 	{
 		for (int x = 0; x < grid.sizeOfSavedData[0]; x++)
 		{
-            double cd_vector[grid.directionsNumber][grid.conservativesNumber];
+            PRECISION cd_vector[grid.directionsNumber][grid.conservativesNumber];
             for(int d=0; d<grid.directionsNumber; d++)
             {
                 for(int c=0; c<grid.conservativesNumber; c++)
@@ -216,16 +220,16 @@ void d2q9_view_python(char *filename, Grid grid, double *data_grid_to_save)
                 }
             }
 
-			// double value = cd_vector[0][0] + cd_vector[1][0] + cd_vector[2][0] + cd_vector[0][1] + cd_vector[1][1] + cd_vector[2][1] + cd_vector[0][2] + cd_vector[1][2] + cd_vector[2][2];
+			// PRECISION value = cd_vector[0][0] + cd_vector[1][0] + cd_vector[2][0] + cd_vector[0][1] + cd_vector[1][1] + cd_vector[2][1] + cd_vector[0][2] + cd_vector[1][2] + cd_vector[2][2];
             // // set value to whatever function of the cd vector you want to plot
-            double w[3];
+            PRECISION w[3];
             kin_to_fluid(cd_vector, w);
-            double value = sqrt(w[1]*w[1] + w[2]*w[2]);
-            //double value = w[0];
+            PRECISION value = sqrt(w[1]*w[1] + w[2]*w[2]);
+            //PRECISION value = w[0];
 
             counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "%f ", value);
             
-            if(counter >= MPI_WRITE_BUFFER_SIZE-32) // Assuming a double is no more than 29 characters
+            if(counter >= MPI_WRITE_BUFFER_SIZE-32) // Assuming a PRECISION is no more than 29 characters
             {
                 if(MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status ) != MPI_SUCCESS)
                 {
@@ -292,7 +296,7 @@ RW SUBGRID_D
 
 
 BODY [type=CUDA]
-    double *subgrid = SUBGRID_D;
+    PRECISION *subgrid = SUBGRID_D;
 
     fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
 
@@ -346,8 +350,8 @@ WRITE SUBGRID_TO[d = 0..directions_number-1]
         ? SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY [type=CUDA]
-    double *subgrid_FROM_D[gridParameters.directionsNumber];
-    double *subgrid_TO_D[gridParameters.directionsNumber];
+    PRECISION *subgrid_FROM_D[gridParameters.directionsNumber];
+    PRECISION *subgrid_TO_D[gridParameters.directionsNumber];
 
     for(int d=0;d<gridParameters.directionsNumber;++d)
     {
@@ -391,9 +395,9 @@ RW SUBGRID_HORIZONTAL_READ[d = 0..directions_number-1]
     -> SUBGRID_HORIZONTAL_WRITE[d_it = d] write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY [type=CUDA]
-    double *subgrid_d[gridParameters.directionsNumber];
-    double *interface_left = INTERFACE_LEFT_HRZ_RD;
-    double *interface_right = INTERFACE_RIGHT_HRZ_RD;
+    PRECISION *subgrid_d[gridParameters.directionsNumber];
+    PRECISION *interface_left = INTERFACE_LEFT_HRZ_RD;
+    PRECISION *interface_right = INTERFACE_RIGHT_HRZ_RD;
 
     for(int d=0;d<gridParameters.directionsNumber;++d)
     {
@@ -435,11 +439,11 @@ RW SUBGRID_HORIZONTAL_WRITE[d = 0..directions_number-1]
         ? SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 BODY [type=CUDA]
-    double *subgrid_d[gridParameters.directionsNumber];
-    double *interface_left = INTERFACE_LEFT_HRZ_WRT[0];
-    double *interface_right = INTERFACE_RIGHT_HRZ_WRT[0];
-    double *interface_up = INTERFACE_UP_HRZ[0];
-    double *interface_down = INTERFACE_DOWN_HRZ[0];
+    PRECISION *subgrid_d[gridParameters.directionsNumber];
+    PRECISION *interface_left = INTERFACE_LEFT_HRZ_WRT[0];
+    PRECISION *interface_right = INTERFACE_RIGHT_HRZ_WRT[0];
+    PRECISION *interface_up = INTERFACE_UP_HRZ[0];
+    PRECISION *interface_down = INTERFACE_DOWN_HRZ[0];
 
     for(int d=0;d<gridParameters.directionsNumber;++d)
     {
@@ -488,7 +492,7 @@ BODY [type=CUDA]
                 rank, x, y, side, s);
     // if(x==0/* && y==1*/)
     // {
-    //     double *vertical_interface = VERTICAL_INTERFACE;
+    //     PRECISION *vertical_interface = VERTICAL_INTERFACE;
 
     //     int i = 1*gridParameters.subgridTrueSize[0];
     //     int first = 40 + gridParameters.overlapSize[0];
@@ -569,8 +573,8 @@ RW SUBGRID_SAVE_REDUCED
         ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x+1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
 
 BODY [type=CUDA]
-    double *subgrid_reduced = SUBGRID_SAVE_REDUCED;
-    double *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
+    PRECISION *subgrid_reduced = SUBGRID_SAVE_REDUCED;
+    PRECISION *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
 
     fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
                rank, subgrid_x, subgrid_y, d, s);
@@ -581,7 +585,7 @@ BODY [type=CUDA]
     if(subgrid_x==0 && subgrid_y==0 && d==0)
     {
         // Set the initial values to zero
-        gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(double)));
+        gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(PRECISION)));
     }
 
     int subgrid_y_corrected = subgrid_y;
@@ -605,10 +609,10 @@ READ SUBGRID_TO_SAVE
 
 
 BODY
-    double *mat = (double*)(SUBGRID_TO_SAVE);
+    PRECISION *mat = (PRECISION*)(SUBGRID_TO_SAVE);
     char current_filename[256];
-    double dt = get_dt(gridParameters);
-    double t = (s*save_interval)*dt;
+    PRECISION dt = get_dt(gridParameters);
+    PRECISION t = (s*save_interval)*dt;
 
     // fprintf(stderr, "[Process %d] kernel save_file CPU (%d) (first value = %f)\n",
     //            rank, s, mat[0]);
@@ -633,7 +637,7 @@ END
 //     -> descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
 
 // BODY
-//     double *mat = (double*)(SUBGRID_D_OUT);
+//     PRECISION *mat = (PRECISION*)(SUBGRID_D_OUT);
 
 //     //fprintf(stderr, "[Process %d] kernel writeBack (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, d, mat[0]);
 // END
@@ -677,13 +681,13 @@ int main(int argc, char *argv[])
     // LBM parameters
     Grid grid = newGrid(rank, world);
 
-    double delta_x = grid.physicalSize[0] / (double)grid.size[0];
-    double dt = get_dt(grid);
+    PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
+    PRECISION dt = get_dt(grid);
 
-    double tmax = 1;
+    PRECISION tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 20000;
-    int save_interval = 100;
+    number_of_steps = 20;
+    int save_interval = 10;
 
 
     // Ensure that the configuration is valid
@@ -705,19 +709,43 @@ int main(int argc, char *argv[])
     int CuHI = -1;
 #endif
 
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &subgrid_d_datatype);
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &subgrid_d_datatype);
     parsec_add2arena_rect(&subgrid_d_arena_datatype, subgrid_d_datatype,
                                  grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
 
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &vertical_slice_datatype);
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &vertical_slice_datatype);
     parsec_add2arena_rect(&vertical_slice_arena_datatype, vertical_slice_datatype,
                                  grid.subgridTrueSize[0], grid.overlapSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
 
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &horizontal_slice_datatype);
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &horizontal_slice_datatype);
     parsec_add2arena_rect(&horizontal_slice_arena_datatype, horizontal_slice_datatype,
                                  grid.overlapSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber, grid.overlapSize[0]);
     
-    parsec_translate_matrix_type(PARSEC_MATRIX_DOUBLE, &save_grid_datatype);
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+    &save_grid_datatype);
     parsec_add2arena_rect(&save_grid_arena_datatype, save_grid_datatype,
                                  grid.sizeOfSavedData[0], grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber, grid.sizeOfSavedData[0]);
 
@@ -766,7 +794,7 @@ exit(1);
             for(int tile_y=0; tile_y<grid.subgridNumber[1]; tile_y++) {
                 for(int d=0; d<grid.directionsNumber; d++) {
                     const int size_of_one_tile = grid.subgridTrueSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber;
-                    double *mat = &(((double*)((parsec_multidimensional_grid_t*)grid.desc)->grid)[size_of_one_tile * (tile_x + tile_y * grid.subgridNumber[0])]);
+                    PRECISION *mat = &(((PRECISION*)((parsec_multidimensional_grid_t*)grid.desc)->grid)[size_of_one_tile * (tile_x + tile_y * grid.subgridNumber[0])]);
                     //printf("for tile (%d,%d) and d=%d, first value at the end : %f\n", tile_x, tile_y, d, mat[0]);
                 }
             }
@@ -806,6 +834,11 @@ exit(1);
     printf("Size of all the vertical interfaces: %f MB\n",
         verticalInterfaceSize*2*grid.subgridNumber[0]*grid.subgridNumber[1]);
 
+    float stepTime=getTotalTime("LBM_step");
+    printf("Processed data per second: %f GB/s (%fGB/%fs)\n",
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(double)/(double)1024/(double)1024/(double)1024/(stepTime/1000),
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(double)/(double)1024/(double)1024/(double)1024,
+        stepTime/1000);
 
     // Print the per-kernel summary
     printSummary();

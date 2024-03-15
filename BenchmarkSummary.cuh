@@ -106,6 +106,16 @@ public:
         printf("\n");
     }
 
+    static float getAverageTime(std::string name)
+    {
+        return kernelInfos[name].time / kernelInfos[name].count;
+    }
+
+    static float getTotalTime(std::string name)
+    {
+        return kernelInfos[name].time;
+    }
+
     static void destroy()
     {
         for (auto &it : kernelTimers)
@@ -130,27 +140,43 @@ std::array<std::unordered_map<std::string, std::pair<cudaEvent_t, cudaEvent_t>>,
 // C interface for the singleton class
 extern "C"
 {
-    void addKernelType(std::string name)
+    void addKernelType(char name[])
     {
         int device;
         gpuErrChk(cudaGetDevice(&device));
 
-        BenchmarkSummary_cpp::getInstance().addKernelType(name, device);
+        std::string name_str(name);
+
+        BenchmarkSummary_cpp::getInstance().addKernelType( name_str, device);
     }
 
-    void recordStart(std::string name)
+    void recordStart(char name[])
     {
-        BenchmarkSummary_cpp::getInstance().recordStart(name);
+        std::string name_str(name);
+        BenchmarkSummary_cpp::getInstance().recordStart(name_str);
     }
 
-    void recordEnd(std::string name)
+    void recordEnd(char name[])
     {
-        BenchmarkSummary_cpp::getInstance().recordEnd(name);
+        std::string name_str(name);
+        BenchmarkSummary_cpp::getInstance().recordEnd(name_str);
     }
 
     void printSummary()
     {
         BenchmarkSummary_cpp::getInstance().printSummary();
+    }
+
+    float getAverageTime(char name[])
+    {
+        std::string name_str(name);
+        return BenchmarkSummary_cpp::getInstance().getAverageTime(name_str);
+    }
+
+    float getTotalTime(char name[])
+    {
+        std::string name_str(name);
+        return BenchmarkSummary_cpp::getInstance().getTotalTime(name_str);
     }
 }
 

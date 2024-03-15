@@ -8,7 +8,7 @@ PTGCC=/home/cflint/parsec_project/parsec/build/parsec/interfaces/ptg/ptg-compile
 # PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/home/cflint/parsec_project/parsec/build/parsec/include
 # Set compiler flags and paths
 CFLAGS = -g `pkg-config --cflags parsec`
-NVCCFLAGS = -arch=sm_35 -arch=sm_70
+NVCCFLAGS = -arch=sm_80
 LDFLAGS = `pkg-config --libs parsec`
 
 # Set library paths and flags for CUDA

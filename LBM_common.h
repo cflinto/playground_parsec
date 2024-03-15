@@ -1,6 +1,9 @@
 #ifndef LBM_COMMON_H_INCLUDED
 #define LBM_COMMON_H_INCLUDED
 
+#define PRECISION float
+// #define DOUBLE_PRECISION
+
 // LBM defines
 
 #define EPSILON 0.000000001
@@ -25,10 +28,14 @@
 
 #define PROBLEM_SIZE_X (20736)
 #define PROBLEM_SIZE_Y (20736/2)
+// #define PROBLEM_SIZE_X (384)
+// #define PROBLEM_SIZE_Y (384/2)
 #define PROBLEM_SIZE_Z (8)
 
 #define SAVED_DATA_SIZE_X (576*2)
 #define SAVED_DATA_SIZE_Y (576)
+// #define SAVED_DATA_SIZE_X (PROBLEM_SIZE_X)
+// #define SAVED_DATA_SIZE_Y (PROBLEM_SIZE_Y)
 
 #define SAVE_STENCIL_X ((PROBLEM_SIZE_X)/(SAVED_DATA_SIZE_X))
 #define SAVE_STENCIL_Y ((PROBLEM_SIZE_Y)/(SAVED_DATA_SIZE_Y))
@@ -75,34 +82,43 @@ typedef struct Grid
 	//double mass[MAX_SUBGRIDS];
 
     // physical coords of the problem, used by the physical model
-	double physicalMinCoords[DIMENSIONS_NUMBER];
-	double physicalSize[DIMENSIONS_NUMBER];
+	PRECISION physicalMinCoords[DIMENSIONS_NUMBER];
+	PRECISION physicalSize[DIMENSIONS_NUMBER];
 
     void *desc;
 } Grid;
 
 typedef struct SubgridArray
 {
-    double *subgrid[3];
+    PRECISION *subgrid[3];
 } SubgridArray;
 
 
-void d2q9_initial_value_d_caller(Grid grid, double *subgrid, int subgridX, int subgridY, int d);
-void d2q9_save_reduce_caller(Grid grid, double *base_subgrid, double *reduced_subgrid, int subgridX, int subgridY, int d);
+void d2q9_initial_value_d_caller(Grid grid, PRECISION *subgrid, int subgridX, int subgridY, int d);
+void d2q9_save_reduce_caller(Grid grid, PRECISION *base_subgrid, PRECISION *reduced_subgrid, int subgridX, int subgridY, int d);
 
-void d2q9_read_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
-void d2q9_write_horizontal_slices_caller(Grid grid, double **subgrid_d, double *interface_left, double *interface_right, int subgridX, int subgridY);
-void d2q9_read_vertical_slices_caller(Grid grid, double **subgrid_d, double *interface_down, double *interface_up, int subgridX, int subgridY);
+void d2q9_read_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY);
+void d2q9_write_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY);
+void d2q9_read_vertical_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISION *interface_down, PRECISION *interface_up, int subgridX, int subgridY);
 void d2q9_LBM_step_caller(Grid grid,
-                double **subgrid_FROM_D,
-                double **subgrid_TO_D,
+                PRECISION **subgrid_FROM_D,
+                PRECISION **subgrid_TO_D,
                 int horizontal_uncomputed_number, int vertical_uncomputed_number,
                 bool has_from_interface_horizontal,
                 bool has_from_interface_vertical,
                 bool has_to_interface_horizontal,
                 bool has_to_interface_vertical,
-                double *interface_down, double *interface_up,
+                PRECISION *interface_down, PRECISION *interface_up,
                 int subgridX, int subgridY);
+
+
+
+void addKernelType(char name[]);
+void recordStart(char name[]);
+void recordEnd(char name[]);
+void printSummary();
+float getAverageTime(char name[]);
+float getTotalTime(char name[]);
 
 
 #endif // LBM_COMMON_H_INCLUDED
