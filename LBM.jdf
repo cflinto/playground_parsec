@@ -51,7 +51,7 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 32;
+	grid.overlapSize[0] = 2;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
@@ -367,7 +367,7 @@ BODY [type=CUDA]
                 subgrid_FROM_D,
                 subgrid_TO_D,
                 s%overlap_x+1,
-                s%overlap_y+1,
+                1,//s%overlap_y+1,
                 0,
                 (s!=0 && s%overlap_y==0),
                 0,
