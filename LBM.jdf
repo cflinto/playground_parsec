@@ -51,7 +51,7 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 5;
+	grid.overlapSize[0] = 32;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
@@ -366,8 +366,8 @@ BODY [type=CUDA]
     d2q9_LBM_step_caller(gridParameters,
                 subgrid_FROM_D,
                 subgrid_TO_D,
-                1,//s%overlap_x+1,
-                1,//s%overlap_y+1,
+                s%overlap_x+1,
+                s%overlap_y+1,
                 0,
                 (s!=0 && s%overlap_y==0),
                 0,
@@ -686,7 +686,7 @@ int main(int argc, char *argv[])
 
     PRECISION tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 2000;
+    number_of_steps = 500;
     int save_interval = 500;
 
 
