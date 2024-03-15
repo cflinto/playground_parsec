@@ -686,8 +686,8 @@ int main(int argc, char *argv[])
 
     PRECISION tmax = 1;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 20;
-    int save_interval = 10;
+    number_of_steps = 2000;
+    int save_interval = 500;
 
 
     // Ensure that the configuration is valid

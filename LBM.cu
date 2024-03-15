@@ -83,7 +83,7 @@ void d2q9_LBM_step_caller(Grid grid,
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
     recordStart("LBM_step");
-    d2q9_LBM_step<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
+    d2q9_LBM_step_optimized<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
                 1024*16, 256>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
@@ -687,61 +687,63 @@ void d2q9_LBM_step_optimized(Grid grid,
                 {
                     int i=c+d*grid.conservativesNumber;
 
-                    int offset_x = -get_dir(i,0);
-                    int offset_y = -get_dir(i,1);
+                    int offset_x = 1-c; // For some reason, get_dir is very slow
+                    int offset_y = 1-d;
 
-                    // if(has_from_interface_vertical && d==2 && yt==y_min)
-                    // {
-                    //     f[d][c] = interface_down[c*grid.subgridTrueSize[0] + xt];
-                    //     // f[d][c] = 0.0;
-                    // }
-                    // else if(has_from_interface_vertical && d==0 && yt==y_max)
-                    // {
-                    //     f[d][c] = interface_up[c*grid.subgridTrueSize[0] + xt];
-                    //     // f[d][c] = 0.0;
-                    // }
-                    // else
-                    // {
-                    //     int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
-                    //     f[d][c] = target_FROM_subgrid[true_id];
-                    // }
-                    int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
-                    f[d][c] = target_FROM_subgrid[true_id];
+                    if(has_from_interface_vertical && d==2 && yt==y_min)
+                    {
+                        f[d][c] = interface_down[c*grid.subgridTrueSize[0] + xt];
+                        // f[d][c] = 0.0;
+                    }
+                    else if(has_from_interface_vertical && d==0 && yt==y_max)
+                    {
+                        f[d][c] = interface_up[c*grid.subgridTrueSize[0] + xt];
+                        // f[d][c] = 0.0;
+                    }
+                    else
+                    {
+                        int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
+                        f[d][c] = target_FROM_subgrid[true_id];
+                    }
+
+
+                    // int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
+                    // f[d][c] = target_FROM_subgrid[true_id];
                 }
             }
 
-            // int xgInt = xt + subgridX * grid.subgridOwnedSize[0];
-            // int ygInt = yt + subgridY * grid.subgridOwnedSize[1];
-            // PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
-            // PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
+            int xgInt = xt + subgridX * grid.subgridOwnedSize[0];
+            int ygInt = yt + subgridY * grid.subgridOwnedSize[1];
+            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
-            // PRECISION w[3];
+            PRECISION w[3];
 
-            // // f equilibrium
-            // kin_to_fluid(&f[0][0], w);
-            // PRECISION feq[3][3];
-            // fluid_to_kin(w, &feq[0][0]);
+            // f equilibrium
+            kin_to_fluid(&f[0][0], w);
+            PRECISION feq[3][3];
+            fluid_to_kin(w, &feq[0][0]);
 
-            // // f fixed (for boundary conditions)
-            // PRECISION ffixed[3][3];
-            // if(is_in_cylinder(xg, yg))
-            // {
-            //     d2q9_t0(w, xg, yg);
-            //     fluid_to_kin(w, &ffixed[0][0]);
-            // }
+            // f fixed (for boundary conditions)
+            PRECISION ffixed[3][3];
+            if(is_in_cylinder(xg, yg))
+            {
+                d2q9_t0(w, xg, yg);
+                fluid_to_kin(w, &ffixed[0][0]);
+            }
 
 
-            // for(int d=0; d<grid.directionsNumber; d++)
-            // {
-            //     for(int c=0; c<grid.conservativesNumber; c++)
-            //     {
-            //         f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
-            //         if(is_in_cylinder(xg, yg))
-            //         {
-            //             f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
-            //         }
-            //     }
-            // }
+            for(int d=0; d<grid.directionsNumber; d++)
+            {
+                for(int c=0; c<grid.conservativesNumber; c++)
+                {
+                    f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    if(is_in_cylinder(xg, yg))
+                    {
+                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    }
+                }
+            }
 
             // Write to the subgrid
             for(int d=0; d<grid.directionsNumber; d++)
@@ -749,20 +751,50 @@ void d2q9_LBM_step_optimized(Grid grid,
                 PRECISION *target_TO_subgrid = subgrid_TO_D.subgrid[d];
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
-                    // target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
-
-                    // if(has_to_interface_vertical && d==0 && yt==y_min)
-                    // {
-                    //     interface_down[c*grid.subgridTrueSize[0] + xt] = f[d][c];
-                    // }
-                    // if(has_to_interface_vertical && d==2 && yt==y_max)
-                    // {
-                    //     interface_up[c*grid.subgridTrueSize[0] + xt] = f[d][c];
-                    // }
                     target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
+
+                    if(has_to_interface_vertical && d==0 && yt==y_min)
+                    {
+                        interface_down[c*grid.subgridTrueSize[0] + xt] = f[d][c];
+                    }
+                    if(has_to_interface_vertical && d==2 && yt==y_max)
+                    {
+                        interface_up[c*grid.subgridTrueSize[0] + xt] = f[d][c];
+                    }
+
+
+                    // target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
                 }
             }
         }
     }
+
+//     // Just copy the 3 FROM subgrids to the 3 TO subgrids
+//     for(int yt=y_min+blockIdx.x;yt<=y_max;yt+=gridDim.x)
+//     {
+//         for(int xt=x_min+threadIdx.x;xt<=x_max;xt+=blockDim.x)
+//         {
+//             PRECISION f[3][3];
+//             for(int d=0; d<grid.directionsNumber; d++)
+//             {
+//                 for(int c=0; c<grid.conservativesNumber; c++)
+//                 {
+//                     int i=c+d*grid.conservativesNumber;
+//                     int offset_x = c-1;
+//                     int offset_y = d-1;
+
+//                     int true_id = c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + (yt+offset_y) * grid.subgridTrueSize[0] + (xt+offset_x);
+//                     f[d][c] = subgrid_FROM_D.subgrid[d][true_id];
+//                 }
+//             }
+//             for(int d=0; d<grid.directionsNumber; d++)
+//             {
+//                 for(int c=0; c<grid.conservativesNumber; c++)
+//                 {
+//                     subgrid_TO_D.subgrid[d][c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + yt * grid.subgridTrueSize[0] + xt] = f[d][c];
+//                 }
+//             }
+//         }
+//     }
 }
 
