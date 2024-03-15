@@ -130,7 +130,7 @@ cd "$test_app_source_directory"
 make clean
 make || make # The first make always fails, so we try again
 
-for experiment_configuration in 0 1 2;
+for experiment_configuration in `seq 1 32` ;
 do
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
@@ -146,12 +146,17 @@ do
 
 	touch "$execution_output_file"
 
+    # Set the parameters of this experiment:
+    overlap_x=$experiment_configuration
+
+
     cd "$experiment_directory"
 
     # Run the application
     echo "Running the application" >> $experiment_log_file
     echo "Running the application" >> $job_log_file
-    echo "################################################################################" >> $experiment_log_file
+    
+    $test_app_source_directory/LBM $overlap_x > "$execution_output_file" 2>&1
 done
 
 

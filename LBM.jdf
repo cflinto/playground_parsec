@@ -26,7 +26,7 @@ void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
 #include "LBM.cuh"
 #include "LBM_common.h"
 
-Grid newGrid(int rank, int nodes)
+Grid newGrid(int rank, int nodes, int overlap_x)
 {
 	Grid grid;
 
@@ -51,7 +51,7 @@ Grid newGrid(int rank, int nodes)
     }
 
 
-	grid.overlapSize[0] = 2;
+	grid.overlapSize[0] = overlap_x;
 	grid.overlapSize[1] = 1;
 
 	grid.currentSubgrid = 0;
@@ -678,8 +678,26 @@ int main(int argc, char *argv[])
     rank = 0;
 #endif
 
+    // Parameters:
+    int overlap_x;
+
+    // If no mpi, read the parameters from the parameters, else, default values
+    if(world == 1)
+    {
+        if(argc != 2)
+        {
+            fprintf(stderr, "Usage: %s <overlap_x>\n", argv[0]);
+            exit(1);
+        }
+        overlap_x = atoi(argv[1]);
+    }
+    else
+    {
+        overlap_x = 1;
+    }
+
     // LBM parameters
-    Grid grid = newGrid(rank, world);
+    Grid grid = newGrid(rank, world, overlap_x);
 
     PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
     PRECISION dt = get_dt(grid);
@@ -692,7 +710,18 @@ int main(int argc, char *argv[])
 
     // Ensure that the configuration is valid
     assert(grid.overlapSize[1] == 1);
-    // ...
+    
+    // Print the parameters of the simulation
+    if(rank == 0)
+    {
+        printf("LBM parameters:\n");
+        printf("  delta_x = %f\n", delta_x);
+        printf("  dt = %f\n", dt);
+        printf("  tmax = %f\n", tmax);
+        printf("  number_of_steps = %d\n", number_of_steps);
+        printf("  save_interval = %d\n", save_interval);
+        printf("  overlap_x = %d\n", overlap_x);
+    }
 
 
     parsec = parsec_init(-1, &argc, &argv);
