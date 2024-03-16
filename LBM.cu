@@ -247,8 +247,8 @@ void d2q9_initial_value_d(Grid grid, PRECISION *subgrid, int subgridX, int subgr
         int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
         int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
 
-        PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
-        PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
+        PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + (PRECISION)0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+        PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + (PRECISION)0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
         PRECISION w[3];
         d2q9_t0(w, xg, yg);
@@ -592,8 +592,8 @@ void d2q9_LBM_step(Grid grid,
             int logical_y = true_y - grid.overlapSize[1];
             int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
             int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
-            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
-            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
+            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + (PRECISION)0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + (PRECISION)0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
             PRECISION w[3];
 
@@ -717,8 +717,8 @@ void d2q9_LBM_step_optimized(Grid grid,
 
             int xgInt = xt + subgridX * grid.subgridOwnedSize[0];
             int ygInt = yt + subgridY * grid.subgridOwnedSize[1];
-            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
-            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
+            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + (PRECISION)0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + (PRECISION)0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
 
             PRECISION w[3];
 
