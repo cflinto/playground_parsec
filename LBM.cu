@@ -528,18 +528,22 @@ void d2q9_LBM_step(Grid grid,
 {
     int stride = blockDim.x * gridDim.x;
 
-    int cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1];
+    int dimX = grid.subgridTrueSize[0] - 2*horizontal_uncomputed_number;
+    int dimY = grid.subgridTrueSize[1] - 2*vertical_uncomputed_number;
+    int cellNum = dimX * dimY;
 
     for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
     {
-        int subgrid_true_x = id % grid.subgridTrueSize[0];
-        int subgrid_true_y = id / grid.subgridTrueSize[0];
+        int rx = id % dimX;
+        int ry = id / dimX;
+        int subgrid_true_x = horizontal_uncomputed_number + rx;
+        int subgrid_true_y = vertical_uncomputed_number + ry;
 
-        bool isInComputationArea=
-            !(
-            subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
-            subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
-            );
+        // bool isInComputationArea=
+        //     !(
+        //     subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
+        //     subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
+        //     );
 
 
         PRECISION f[3][3];
@@ -574,17 +578,17 @@ void d2q9_LBM_step(Grid grid,
                     assert(grid.overlapSize[1] == 1);
                     f[d][c] = interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x];
                 }
-                else if(isInComputationArea)
+                else// if(isInComputationArea)
                 { // Main case: in the logical space
                     f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
                 }
             }
         }
 
-        // relax
+        // // relax
         
-        if(isInComputationArea)
-        {
+        // if(isInComputationArea)
+        // {
             // compute x and y as PRECISIONs on the whole grid (xg and yg)
             int true_x = subgrid_true_x;
             int true_y = subgrid_true_y;
@@ -623,7 +627,7 @@ void d2q9_LBM_step(Grid grid,
                     }
                 }
             }
-        }
+        // }
 
         int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
         int position_in_interface_right_y = subgrid_true_y;
@@ -650,7 +654,7 @@ void d2q9_LBM_step(Grid grid,
                 }
                 
                 // In we are in the computation area, we write to the subgrid
-                if(isInComputationArea)
+                // if(isInComputationArea)
                 {
                     target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
                 }
