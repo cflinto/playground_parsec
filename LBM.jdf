@@ -829,7 +829,7 @@ exit(1);
     }
 
     // Recall the relevant parameters:
-    
+
     printf("LBM parameters:\n");
     printf("  delta_x = %f\n", delta_x);
     printf("  dt = %f\n", dt);
@@ -845,8 +845,8 @@ exit(1);
     printf("  WRITE_HORIZONTAL_SLICES_THREAD_NUM = %d\n", WRITE_HORIZONTAL_SLICES_THREAD_NUM);
     printf("  READ_VERTICAL_SLICES_BLOCK_NUM = %d\n", READ_VERTICAL_SLICES_BLOCK_NUM);
     printf("  READ_VERTICAL_SLICES_THREAD_NUM = %d\n", READ_VERTICAL_SLICES_THREAD_NUM);
-    printf("  LBM_STEP_BLOCK_NUM = %d\n", LBM_STEP_BLOCK_NUM);
-    printf("  LBM_STEP_THREAD_NUM = %d\n", LBM_STEP_THREAD_NUM);
+    // printf("  LBM_STEP_BLOCK_NUM = %d\n", LBM_STEP_BLOCK_NUM);
+    // printf("  LBM_STEP_THREAD_NUM = %d\n", LBM_STEP_THREAD_NUM);
 
     printf("############################################\n");
     printf("################# Grid sizes ###############\n");

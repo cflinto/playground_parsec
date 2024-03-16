@@ -82,9 +82,17 @@ void d2q9_LBM_step_caller(Grid grid,
     // printf("d2q9_LBM_step_caller: has_from_interface_horizontal=%d, has_from_interface_vertical=%d, has_to_interface_horizontal=%d, has_to_interface_vertical=%d\n",
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
+    int cellNum = (grid.subgridTrueSize[0]-2*horizontal_uncomputed_number) * (grid.subgridTrueSize[1]-2*vertical_uncomputed_number);
+    int thread_num = 128; // Fine-tuned
+    int block_num = (cellNum + thread_num - 1) / thread_num;
+    while(block_num > 16384)
+    {
+        block_num /= 2;
+    }
+    
     recordStart("LBM_step");
     d2q9_LBM_step<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
-                LBM_STEP_BLOCK_NUM, LBM_STEP_THREAD_NUM>>>(grid,
+                block_num, thread_num>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
                 horizontal_uncomputed_number, vertical_uncomputed_number,

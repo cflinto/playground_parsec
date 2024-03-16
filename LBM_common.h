@@ -27,13 +27,13 @@
 #ifndef READ_VERTICAL_SLICES_THREAD_NUM
 #define READ_VERTICAL_SLICES_THREAD_NUM 256
 #endif
-// LBM step
-#ifndef LBM_STEP_BLOCK_NUM
-#define LBM_STEP_BLOCK_NUM 1024
-#endif
-#ifndef LBM_STEP_THREAD_NUM
-#define LBM_STEP_THREAD_NUM 256
-#endif
+// // LBM step
+// #ifndef LBM_STEP_BLOCK_NUM
+// #define LBM_STEP_BLOCK_NUM 1024
+// #endif
+// #ifndef LBM_STEP_THREAD_NUM
+// #define LBM_STEP_THREAD_NUM 256
+// #endif
 
 // LBM defines
 
