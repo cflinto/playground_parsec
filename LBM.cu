@@ -147,11 +147,11 @@ constexpr int get_dir(int i, int j) // constexpr to be sure it is never called
 __host__ __device__
 void fluid_to_kin(const PRECISION *w, PRECISION *f)
 {
-    static const PRECISION c2 = 1. / 3.;
-    PRECISION dotvel = 0, vel2 = 0, l2 = 0, l4 = 0, c4 = 0;
+    static const PRECISION c2 = (PRECISION)1 / (PRECISION)3;
+    PRECISION dotvel = 0, vel2 = 0, l4 = 0, c4 = 0;
 
-    l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
-    PRECISION l2_ov_c2 = l2 / c2;
+    const PRECISION l2 = MAXIMUM_VELOCITY * MAXIMUM_VELOCITY;
+    const PRECISION l2_ov_c2 = l2 / c2;
 
     l4 = l2 * l2;
     c4 = c2 * c2;
@@ -159,24 +159,24 @@ void fluid_to_kin(const PRECISION *w, PRECISION *f)
     vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
     dotvel = sqrt(l2) * ((PRECISION)get_dir(4,0) * w[1] + (PRECISION)get_dir(4,1) * w[2]) / w[0];
 
-    f[4] = (4. / 9.) * w[0] *
-    (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-    l2 / (2. * c2) * vel2);
+    f[4] = ((PRECISION)4 / (PRECISION)9) * w[0] *
+    ((PRECISION)1 + (l2_ov_c2)*dotvel + l4 / ((PRECISION)2 * c4) * dotvel * dotvel -
+    l2 / ((PRECISION)2 * c2) * vel2);
 
     // perpendicular directions
     for (size_t i = 1; i < 9; i+=2) {
         dotvel = sqrt(l2) * ((PRECISION)get_dir(i,0) * w[1] + (PRECISION)get_dir(i,1) * w[2]) / w[0];
-        f[i] = (1. / 9.) * w[0] *
-        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-        l2 / (2. * c2) * vel2);
+        f[i] = ((PRECISION)1 / (PRECISION)9) * w[0] *
+        ((PRECISION)1 + (l2_ov_c2)*dotvel + l4 / ((PRECISION)2 * c4) * dotvel * dotvel -
+        l2 / ((PRECISION)2 * c2) * vel2);
     }
     // diagonal directions
     for (size_t it = 0; it < 4; it++) {
         size_t i = it * 2 + 2*(it>1);
         dotvel = sqrt(l2) * ((PRECISION)get_dir(i,0) * w[1] + (PRECISION)get_dir(i,1) * w[2]) / w[0];
-        f[i] = (1. / 36.) * w[0] *
-        (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
-        l2 / (2. * c2) * vel2);
+        f[i] = ((PRECISION)1 / (PRECISION)36) * w[0] *
+        ((PRECISION)1 + (l2_ov_c2)*dotvel + l4 / ((PRECISION)2 * c4) * dotvel * dotvel -
+        l2 / ((PRECISION)2 * c2) * vel2);
     }
 }
 
@@ -189,8 +189,8 @@ void kin_to_fluid(const PRECISION *f, PRECISION *w)
 
     for (int i = 0; i < 9; i++) {
         w[0] = w[0] + f[i];
-        w[1] = w[1] + MAXIMUM_VELOCITY * (PRECISION)get_dir(i,0) * f[i];
-        w[2] = w[2] + MAXIMUM_VELOCITY * (PRECISION)get_dir(i,1) * f[i];
+        w[1] = w[1] + (PRECISION)MAXIMUM_VELOCITY * (PRECISION)get_dir(i,0) * f[i];
+        w[2] = w[2] + (PRECISION)MAXIMUM_VELOCITY * (PRECISION)get_dir(i,1) * f[i];
     }
 }
 
@@ -528,22 +528,18 @@ void d2q9_LBM_step(Grid grid,
 {
     int stride = blockDim.x * gridDim.x;
 
-    int dimX = grid.subgridTrueSize[0] - 2*horizontal_uncomputed_number;
-    int dimY = grid.subgridTrueSize[1] - 2*vertical_uncomputed_number;
-    int cellNum = dimX * dimY;
+    int cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1];
 
     for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
     {
-        int rx = id % dimX;
-        int ry = id / dimX;
-        int subgrid_true_x = horizontal_uncomputed_number + rx;
-        int subgrid_true_y = vertical_uncomputed_number + ry;
+        int subgrid_true_x = id % grid.subgridTrueSize[0];
+        int subgrid_true_y = id / grid.subgridTrueSize[0];
 
-        // bool isInComputationArea=
-        //     !(
-        //     subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
-        //     subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
-        //     );
+        bool isInComputationArea=
+            !(
+            subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
+            subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
+            );
 
 
         PRECISION f[3][3];
@@ -578,17 +574,17 @@ void d2q9_LBM_step(Grid grid,
                     assert(grid.overlapSize[1] == 1);
                     f[d][c] = interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x];
                 }
-                else// if(isInComputationArea)
+                else if(isInComputationArea)
                 { // Main case: in the logical space
                     f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
                 }
             }
         }
 
-        // // relax
+        // relax
         
-        // if(isInComputationArea)
-        // {
+        if(isInComputationArea)
+        {
             // compute x and y as PRECISIONs on the whole grid (xg and yg)
             int true_x = subgrid_true_x;
             int true_y = subgrid_true_y;
@@ -619,15 +615,14 @@ void d2q9_LBM_step(Grid grid,
             {
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
-
-                    f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    f[d][c] = OMEGA_RELAX*feq[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
                     if(is_in_cylinder(xg, yg))
                     {
-                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
                     }
                 }
             }
-        // }
+        }
 
         int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
         int position_in_interface_right_y = subgrid_true_y;
@@ -654,7 +649,7 @@ void d2q9_LBM_step(Grid grid,
                 }
                 
                 // In we are in the computation area, we write to the subgrid
-                // if(isInComputationArea)
+                if(isInComputationArea)
                 {
                     target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
                 }
@@ -745,10 +740,10 @@ void d2q9_LBM_step_optimized(Grid grid,
             {
                 for(int c=0; c<grid.conservativesNumber; c++)
                 {
-                    f[d][c] = OMEGA_RELAX*feq[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                    f[d][c] = OMEGA_RELAX*feq[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
                     if(is_in_cylinder(xg, yg))
                     {
-                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + (1.0 - OMEGA_RELAX)*f[d][c];
+                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
                     }
                 }
             }

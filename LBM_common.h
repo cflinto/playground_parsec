@@ -28,13 +28,13 @@
 #define CFL 0.45
 // #define ALPHA 0.9 // TODO change to match cylinder test case
 // #define BETA 0.9
-#define MAXIMUM_VELOCITY 1.0
+#define MAXIMUM_VELOCITY ((PRECISION)1.0)
 
-#define OMEGA_RELAX 1.9
+#define OMEGA_RELAX ((PRECISION)1.9)
 
-#define CYLINDER_RADIUS 0.3
-#define CYLINDER_CENTER_X 0.0
-#define CYLINDER_CENTER_Y 0.0
+#define CYLINDER_RADIUS ((PRECISION)0.3)
+#define CYLINDER_CENTER_X ((PRECISION)0.0)
+#define CYLINDER_CENTER_Y ((PRECISION)0.0)
 
 // HPC defines
 
