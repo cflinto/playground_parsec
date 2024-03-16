@@ -6,20 +6,6 @@
 
 // block/thread num for read_horizontal_slices, write_horizontal_slices, read_vertical_slices, lbm_step
 
-// Read horizontal slices
-#ifndef READ_HORIZONTAL_SLICES_BLOCK_NUM
-#define READ_HORIZONTAL_SLICES_BLOCK_NUM 1024
-#endif
-#ifndef READ_HORIZONTAL_SLICES_THREAD_NUM
-#define READ_HORIZONTAL_SLICES_THREAD_NUM 256
-#endif
-// Write horizontal slices
-#ifndef WRITE_HORIZONTAL_SLICES_BLOCK_NUM
-#define WRITE_HORIZONTAL_SLICES_BLOCK_NUM 1024
-#endif
-#ifndef WRITE_HORIZONTAL_SLICES_THREAD_NUM
-#define WRITE_HORIZONTAL_SLICES_THREAD_NUM 256
-#endif
 // Read vertical slices
 #ifndef READ_VERTICAL_SLICES_BLOCK_NUM
 #define READ_VERTICAL_SLICES_BLOCK_NUM 256
