@@ -125,12 +125,23 @@ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/cflint/parsec_project/parsec/build/parsec
 export PKG_CONFIG_PATH
 export LD_LIBRARY_PATH
 
-# Compile the application (make clean, then make)
-cd "$test_app_source_directory"
-make clean
-make || make # The first make always fails, so we try again
+# Perform all the combinations thread_num x block_num
+possible_thread_nums="64 128 256 512 1024"
+possible_block_nums="1024 4096 16384"
 
-for experiment_configuration in `seq 1 32` ;
+# Generate the list of all the combinations
+# We will use the following format: "thread_num block_num"
+# The list will be separated by a newline character
+# The list will be stored in the variable "combinations"
+combinations=""
+for thread_num in $possible_thread_nums ; do
+	for block_num in $possible_block_nums ; do
+		combinations="$combinations$thread_num $block_num\n"
+	done
+done
+
+# 15 combinations
+for experiment_configuration in `seq 1 15` ;
 do
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
@@ -147,8 +158,31 @@ do
 	touch "$execution_output_file"
 
     # Set the parameters of this experiment:
-    overlap_x=$experiment_configuration
+    # overlap_x=$experiment_configuration
+	overlap_x=10
 
+	combination=`echo -e $combinations | head -n $experiment_configuration | tail -n 1`
+
+	# Get the block num / thread num from the combination
+	READ_HORIZONTAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
+	READ_HORIZONTAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
+	WRITE_HORIZONTAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
+	WRITE_HORIZONTAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
+	READ_VERTICAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
+	READ_VERTICAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
+	LBM_STEP_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
+	LBM_STEP_THREAD_NUM=`echo $combination | cut -d' ' -f1`
+
+	# Compile the application (make clean, then make)
+	cd "$test_app_source_directory"
+	make clean
+	# The first make always fails, so we run two makes
+	make || \
+	READ_HORIZONTAL_SLICES_BLOCK_NUM=$READ_HORIZONTAL_SLICES_BLOCK_NUM READ_HORIZONTAL_SLICES_THREAD_NUM=$READ_HORIZONTAL_SLICES_THREAD_NUM\
+	WRITE_HORIZONTAL_SLICES_BLOCK_NUM=$WRITE_HORIZONTAL_SLICES_BLOCK_NUM WRITE_HORIZONTAL_SLICES_THREAD_NUM=$WRITE_HORIZONTAL_SLICES_THREAD_NUM\
+	READ_VERTICAL_SLICES_BLOCK_NUM=$READ_VERTICAL_SLICES_BLOCK_NUM READ_VERTICAL_SLICES_THREAD_NUM=$READ_VERTICAL_SLICES_THREAD_NUM\
+	LBM_STEP_BLOCK_NUM=$LBM_STEP_BLOCK_NUM LBM_STEP_THREAD_NUM=$LBM_STEP_THREAD_NUM\
+	make
 
     cd "$experiment_directory"
 

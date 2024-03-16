@@ -710,18 +710,6 @@ int main(int argc, char *argv[])
 
     // Ensure that the configuration is valid
     assert(grid.overlapSize[1] == 1);
-    
-    // Print the parameters of the simulation
-    if(rank == 0)
-    {
-        printf("LBM parameters:\n");
-        printf("  delta_x = %f\n", delta_x);
-        printf("  dt = %f\n", dt);
-        printf("  tmax = %f\n", tmax);
-        printf("  number_of_steps = %d\n", number_of_steps);
-        printf("  save_interval = %d\n", save_interval);
-        printf("  overlap_x = %d\n", overlap_x);
-    }
 
 
     parsec = parsec_init(-1, &argc, &argv);
@@ -841,6 +829,25 @@ exit(1);
     }
 
     // Recall the relevant parameters:
+    
+    printf("LBM parameters:\n");
+    printf("  delta_x = %f\n", delta_x);
+    printf("  dt = %f\n", dt);
+    printf("  tmax = %f\n", tmax);
+    printf("  number_of_steps = %d\n", number_of_steps);
+    printf("  save_interval = %d\n", save_interval);
+    printf("  overlap_x = %d\n", overlap_x);
+
+    printf("Block sizes:\n");
+    printf("  READ_HORIZONTAL_SLICES_BLOCK_NUM = %d\n", READ_HORIZONTAL_SLICES_BLOCK_NUM);
+    printf("  READ_HORIZONTAL_SLICES_THREAD_NUM = %d\n", READ_HORIZONTAL_SLICES_THREAD_NUM);
+    printf("  WRITE_HORIZONTAL_SLICES_BLOCK_NUM = %d\n", WRITE_HORIZONTAL_SLICES_BLOCK_NUM);
+    printf("  WRITE_HORIZONTAL_SLICES_THREAD_NUM = %d\n", WRITE_HORIZONTAL_SLICES_THREAD_NUM);
+    printf("  READ_VERTICAL_SLICES_BLOCK_NUM = %d\n", READ_VERTICAL_SLICES_BLOCK_NUM);
+    printf("  READ_VERTICAL_SLICES_THREAD_NUM = %d\n", READ_VERTICAL_SLICES_THREAD_NUM);
+    printf("  LBM_STEP_BLOCK_NUM = %d\n", LBM_STEP_BLOCK_NUM);
+    printf("  LBM_STEP_THREAD_NUM = %d\n", LBM_STEP_THREAD_NUM);
+
     printf("############################################\n");
     printf("################# Grid sizes ###############\n");
     printf("############################################\n");

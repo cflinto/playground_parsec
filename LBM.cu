@@ -6,14 +6,14 @@ extern "C" {
 void d2q9_initial_value_d_caller(Grid grid, PRECISION *subgrid, int subgridX, int subgridY, int d)
 {
     recordStart("initialize");
-    d2q9_initial_value_d<<<256, 256>>>(grid, subgrid, subgridX, subgridY, d);
+    d2q9_initial_value_d<<<1024, 256>>>(grid, subgrid, subgridX, subgridY, d);
     recordEnd("initialize");
 }
 
 void d2q9_save_reduce_caller(Grid grid, PRECISION *base_subgrid, PRECISION *reduced_subgrid, int subgridX, int subgridY, int d)
 {
     recordStart("save_reduce");
-    d2q9_save_reduce<<<256, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
+    d2q9_save_reduce<<<1024, 256>>>(grid, base_subgrid, reduced_subgrid, subgridX, subgridY, d);
     recordEnd("save_reduce");
 }
 
@@ -27,7 +27,7 @@ void d2q9_read_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECIS
     }
 
     recordStart("read_horizontal_slices");
-    d2q9_read_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    d2q9_read_horizontal_slices<<<READ_HORIZONTAL_SLICES_BLOCK_NUM, READ_HORIZONTAL_SLICES_THREAD_NUM>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
     recordEnd("read_horizontal_slices");
 }
 
@@ -41,7 +41,7 @@ void d2q9_write_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECI
     }
 
     recordStart("write_horizontal_slices");
-    d2q9_write_horizontal_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    d2q9_write_horizontal_slices<<<WRITE_HORIZONTAL_SLICES_BLOCK_NUM, WRITE_HORIZONTAL_SLICES_THREAD_NUM>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
     recordEnd("write_horizontal_slices");
 }
 
@@ -55,7 +55,7 @@ void d2q9_read_vertical_slices_caller(Grid grid, PRECISION **subgrid_d, PRECISIO
     }
 
     recordStart("read_vertical_slices");
-    d2q9_read_vertical_slices<<<256, 256>>>(grid, subgrid_D_wrapped, interface_down, interface_up, subgridX, subgridY);
+    d2q9_read_vertical_slices<<<READ_VERTICAL_SLICES_BLOCK_NUM, READ_VERTICAL_SLICES_THREAD_NUM>>>(grid, subgrid_D_wrapped, interface_down, interface_up, subgridX, subgridY);
     recordEnd("read_vertical_slices");
 }
 
@@ -84,7 +84,7 @@ void d2q9_LBM_step_caller(Grid grid,
 
     recordStart("LBM_step");
     d2q9_LBM_step_optimized<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
-                1024*16, 256>>>(grid,
+                LBM_STEP_BLOCK_NUM, LBM_STEP_THREAD_NUM>>>(grid,
                 subgrid_FROM_D_wrapped,
                 subgrid_TO_D_wrapped,
                 horizontal_uncomputed_number, vertical_uncomputed_number,
@@ -104,19 +104,20 @@ void d2q9_LBM_step_caller(Grid grid,
 __host__ __device__
 int get_dir(int i, int j)
 {
-    const int dirs[9][2] = {
-        {-1, -1},
-        {0, -1},
-        {1, -1},
-        {-1, 0},
-        {0, 0},
-        {1, 0},
-        {-1, 1},
-        {0, 1},
-        {1, 1}
-    };
+    // const int dirs[9][2] = {
+    //     {-1, -1},
+    //     {0, -1},
+    //     {1, -1},
+    //     {-1, 0},
+    //     {0, 0},
+    //     {1, 0},
+    //     {-1, 1},
+    //     {0, 1},
+    //     {1, 1}
+    // };
 
-    return dirs[i][j];
+    // return dirs[i][j];
+    return j?i/3-1:i%3-1;
 }
 
 __host__ __device__
