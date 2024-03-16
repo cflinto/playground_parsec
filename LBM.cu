@@ -126,7 +126,7 @@ void d2q9_LBM_step_caller(Grid grid,
 
 
 __host__ __device__
-int get_dir(int i, int j)
+constexpr int get_dir(int i, int j) // constexpr to be sure it is never called
 {
     // const int dirs[9][2] = {
     //     {-1, -1},
@@ -157,23 +157,25 @@ void fluid_to_kin(const PRECISION *w, PRECISION *f)
     c4 = c2 * c2;
 
     vel2 = (w[1] * w[1] + w[2] * w[2]) / (w[0] * w[0]);
-    dotvel = sqrt(l2) * (get_dir(4,0) * w[1] + get_dir(4,1) * w[2]) / w[0];
+    dotvel = sqrt(l2) * ((PRECISION)get_dir(4,0) * w[1] + (PRECISION)get_dir(4,1) * w[2]) / w[0];
 
     f[4] = (4. / 9.) * w[0] *
     (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
     l2 / (2. * c2) * vel2);
 
     // perpendicular directions
+    #pragma unroll
     for (size_t i = 1; i < 9; i+=2) {
-        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        dotvel = sqrt(l2) * ((PRECISION)get_dir(i,0) * w[1] + (PRECISION)get_dir(i,1) * w[2]) / w[0];
         f[i] = (1. / 9.) * w[0] *
         (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
         l2 / (2. * c2) * vel2);
     }
     // diagonal directions
+    #pragma unroll
     for (size_t it = 0; it < 4; it++) {
         size_t i = it * 2 + 2*(it>1);
-        dotvel = sqrt(l2) * (get_dir(i,0) * w[1] + get_dir(i,1) * w[2]) / w[0];
+        dotvel = sqrt(l2) * ((PRECISION)get_dir(i,0) * w[1] + (PRECISION)get_dir(i,1) * w[2]) / w[0];
         f[i] = (1. / 36.) * w[0] *
         (1.0 + (l2_ov_c2)*dotvel + l4 / (2. * c4) * dotvel * dotvel -
         l2 / (2. * c2) * vel2);
@@ -187,10 +189,11 @@ void kin_to_fluid(const PRECISION *f, PRECISION *w)
     w[1] = 0;
     w[2] = 0;
 
+    #pragma unroll
     for (int i = 0; i < 9; i++) {
         w[0] = w[0] + f[i];
-        w[1] = w[1] + MAXIMUM_VELOCITY * get_dir(i,0) * f[i];
-        w[2] = w[2] + MAXIMUM_VELOCITY * get_dir(i,1) * f[i];
+        w[1] = w[1] + MAXIMUM_VELOCITY * (PRECISION)get_dir(i,0) * f[i];
+        w[2] = w[2] + MAXIMUM_VELOCITY * (PRECISION)get_dir(i,1) * f[i];
     }
 }
 
@@ -545,16 +548,18 @@ void d2q9_LBM_step(Grid grid,
         PRECISION f[3][3];
 
         // shift
+        #pragma unroll
         for(int d=0; d<grid.directionsNumber; d++)
         {
             PRECISION *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
 
+            #pragma unroll
             for(int c=0; c<grid.conservativesNumber; c++)
             {
                 int i=c+d*grid.conservativesNumber;
 
-                int target_true_x = subgrid_true_x - get_dir(i,0);
-                int target_true_y = subgrid_true_y - get_dir(i,1);
+                int target_true_x = subgrid_true_x - (PRECISION)get_dir(i,0);
+                int target_true_y = subgrid_true_y - (PRECISION)get_dir(i,1);
 
                 int position_in_interface_down_x = target_true_x;
                 int position_in_interface_down_y = target_true_y;
@@ -633,32 +638,13 @@ void d2q9_LBM_step(Grid grid,
         int position_in_interface_up_x = subgrid_true_x;
         int position_in_interface_up_y = subgrid_true_y - grid.subgridOwnedSize[1];
 
+        #pragma unroll
         for(int d=0; d<grid.directionsNumber; d++)
         {
             PRECISION *target_TO_subgrid = subgrid_TO_D.subgrid[d];
+            #pragma unroll
             for(int c=0; c<grid.conservativesNumber; c++)
             {
-                /*if(has_to_interface_vertical && position_in_interface_down_x >= 0 && position_in_interface_down_x < grid.overlapSize[1])
-                { // Write to the up interface
-                    assert(position_in_interface_down_y == 0);
-                    assert(grid.overlapSize[1] == 1);
-                    interface_down[c*grid.subgridTrueSize[0] + position_in_interface_down_x] = f[d][c];
-                }
-                if(has_to_interface_vertical && position_in_interface_up_x >= 0 && position_in_interface_up_x < grid.overlapSize[1])
-                { // Write to the down interface
-                    assert(position_in_interface_up_y == 0);
-                    assert(grid.overlapSize[1] == 1);
-                    interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x] = f[d][c];
-                }
-                if(has_to_interface_horizontal && position_in_interface_left_y >= 0 && position_in_interface_left_y < grid.overlapSize[1])
-                { // Write to the left interface
-                    interface_left[c*grid.overlapSize[0]*grid.subgridTrueSize[1] + position_in_interface_left_y*grid.overlapSize[0] + position_in_interface_left_x] = f[d][c];
-                }
-                if(has_to_interface_horizontal && position_in_interface_right_y >= 0 && position_in_interface_right_y < grid.overlapSize[1])
-                { // Write to the right interface
-                    interface_right[c*grid.overlapSize[0]*grid.subgridTrueSize[1] + position_in_interface_right_y*grid.overlapSize[0] + position_in_interface_right_x] = f[d][c];
-                }*/
-
                 if(has_to_interface_vertical && position_in_interface_down_y >= 0 && position_in_interface_down_y < grid.overlapSize[1] && d==0)
                 {
                     assert(grid.overlapSize[1] == 1);

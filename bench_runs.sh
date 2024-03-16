@@ -160,16 +160,6 @@ do
     # overlap_x=$experiment_configuration
 	overlap_x=10
 
-	combination=`echo -e $combinations | head -n $experiment_configuration | tail -n 1`
-
-	# Get the block num / thread num from the combination
-	READ_HORIZONTAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
-	READ_HORIZONTAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
-	WRITE_HORIZONTAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
-	WRITE_HORIZONTAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
-	READ_VERTICAL_SLICES_BLOCK_NUM=`echo $combination | cut -d' ' -f2`
-	READ_VERTICAL_SLICES_THREAD_NUM=`echo $combination | cut -d' ' -f1`
-
 
 	# Compile the application (make clean, then make)
 	cd "$test_app_source_directory"
