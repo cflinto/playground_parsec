@@ -126,8 +126,8 @@ export PKG_CONFIG_PATH
 export LD_LIBRARY_PATH
 
 # Perform all the combinations thread_num x block_num
-possible_thread_nums="64 128 256 512 1024"
-possible_block_nums="1024 4096 16384"
+possible_thread_nums="64 128 192 256"
+possible_block_nums="256 512 1024 2048"
 
 # Generate the list of all the combinations
 # We will use the following format: "thread_num block_num"
@@ -140,8 +140,7 @@ for thread_num in $possible_thread_nums ; do
 	done
 done
 
-# 15 combinations
-for experiment_configuration in `seq 1 15` ;
+for experiment_configuration in `seq 1 16` ;
 do
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"

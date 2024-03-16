@@ -26,8 +26,16 @@ void d2q9_read_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECIS
         subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
     }
 
+    int line_num = grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber * 2;
+    int thread_num = 128;
+    int block_num = line_num;
+    while(block_num > 1500) // Fine-tuned, it appears that the best block number is around 1000
+    {
+        block_num /= 2;
+    }
+
     recordStart("read_horizontal_slices");
-    d2q9_read_horizontal_slices<<<READ_HORIZONTAL_SLICES_BLOCK_NUM, READ_HORIZONTAL_SLICES_THREAD_NUM>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    d2q9_read_horizontal_slices<<<block_num, thread_num>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
     recordEnd("read_horizontal_slices");
 }
 
@@ -40,8 +48,16 @@ void d2q9_write_horizontal_slices_caller(Grid grid, PRECISION **subgrid_d, PRECI
         subgrid_D_wrapped.subgrid[d] = subgrid_d[d];
     }
 
+    int line_num = grid.subgridTrueSize[1] * grid.conservativesNumber * grid.directionsNumber * 2;
+    int thread_num = 128;
+    int block_num = line_num;
+    while(block_num > 1500) // Fine-tuned, it appears that the best block number is around 1000
+    {
+        block_num /= 2;
+    }
+
     recordStart("write_horizontal_slices");
-    d2q9_write_horizontal_slices<<<WRITE_HORIZONTAL_SLICES_BLOCK_NUM, WRITE_HORIZONTAL_SLICES_THREAD_NUM>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
+    d2q9_write_horizontal_slices<<<block_num, thread_num>>>(grid, subgrid_D_wrapped, interface_left, interface_right, subgridX, subgridY);
     recordEnd("write_horizontal_slices");
 }
 
