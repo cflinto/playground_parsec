@@ -29,7 +29,7 @@ __global__ void d2q9_read_horizontal_slices(Grid grid, SubgridArray subgrid_d, P
 __global__ void d2q9_write_horizontal_slices(Grid grid, SubgridArray subgrid_d, PRECISION *interface_left, PRECISION *interface_right, int subgridX, int subgridY);
 __global__ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgrid_d, PRECISION *interface_down, PRECISION *interface_up, int subgridX, int subgridY);
 
-__global__ void d2q9_LBM_step(Grid grid,
+__global__ void d2q9_LBM_step_original(Grid grid,
                         SubgridArray subgrid_FROM_D,
                         SubgridArray subgrid_TO_D,
                         int horizontal_uncomputed_number, int vertical_uncomputed_number,
@@ -39,7 +39,17 @@ __global__ void d2q9_LBM_step(Grid grid,
                         bool has_to_interface_vertical,
                         PRECISION *interface_down, PRECISION *interface_up,
                         int subgridX, int subgridY);
-__global__ void d2q9_LBM_step_optimized(Grid grid,
+__global__ void d2q9_LBM_step_all_threads_domain(Grid grid,
+                        SubgridArray subgrid_FROM_D,
+                        SubgridArray subgrid_TO_D,
+                        int horizontal_uncomputed_number, int vertical_uncomputed_number,
+                        bool has_from_interface_horizontal,
+                        bool has_from_interface_vertical,
+                        bool has_to_interface_horizontal,
+                        bool has_to_interface_vertical,
+                        PRECISION *interface_down, PRECISION *interface_up,
+                        int subgridX, int subgridY);
+__global__ void d2q9_LBM_step_one_block_per_line(Grid grid,
                         SubgridArray subgrid_FROM_D,
                         SubgridArray subgrid_TO_D,
                         int horizontal_uncomputed_number, int vertical_uncomputed_number,

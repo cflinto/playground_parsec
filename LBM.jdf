@@ -277,6 +277,7 @@ overlap_x             [ type="int" ]
 overlap_y             [ type="int" ]
 number_of_steps       [ type="int" ]
 save_interval         [ type="int" ]
+step_kernel_version   [ type="int" ]
 CuHI                  [type = "parsec_info_id_t"]
 
 
@@ -373,7 +374,9 @@ BODY [type=CUDA]
                 0,
                 (s!=number_of_steps-1 && s%overlap_y==overlap_y-1 && (s%overlap_x!=overlap_x-1 || s==0)),
                 INTERFACE_UP, INTERFACE_DOWN,
-                subgrid_x, subgrid_y);
+                subgrid_x, subgrid_y,
+                step_kernel_version
+                );
 END
 
 read_horizontal_slices(subgrid_x, subgrid_y, s)
@@ -680,20 +683,23 @@ int main(int argc, char *argv[])
 
     // Parameters:
     int overlap_x;
+    int step_kernel_version;
 
     // If no mpi, read the parameters from the parameters, else, default values
     if(world == 1)
     {
-        if(argc != 2)
+        if(argc != 3)
         {
-            fprintf(stderr, "Usage: %s <overlap_x>\n", argv[0]);
+            fprintf(stderr, "Usage: %s <overlap_x> <step_kernel_version>\n", argv[0]);
             exit(1);
         }
         overlap_x = atoi(argv[1]);
+        step_kernel_version = atoi(argv[2]);
     }
     else
     {
         overlap_x = 1;
+        step_kernel_version = 0;
     }
 
     // LBM parameters
@@ -785,6 +791,7 @@ exit(1);
                                 grid.overlapSize[0], grid.overlapSize[1],
                                 number_of_steps,
                                 save_interval,
+                                step_kernel_version,
                                 CuHI);
 
     assert( NULL != tp );

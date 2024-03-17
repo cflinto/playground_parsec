@@ -126,7 +126,9 @@ void d2q9_LBM_step_caller(Grid grid,
                 bool has_to_interface_horizontal,
                 bool has_to_interface_vertical,
                 PRECISION *interface_down, PRECISION *interface_up,
-                int subgridX, int subgridY);
+                int subgridX, int subgridY,
+                int kernel_version
+                );
 
 
 

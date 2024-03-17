@@ -140,8 +140,24 @@ for thread_num in $possible_thread_nums ; do
 	done
 done
 
-for experiment_configuration in `seq 1 16` ;
+# Experiments are integers zxy, where x is the overlap_x and y is the step_kernel_version, and z is for the multiple runs of the same configuration
+# Hence, we go like this: 10, 11, 12, 20, 21, 22, 30, 31, 32, , 40, 41, 42, ..., 320, 321, 322
+for experiment_configuration in `seq 10 32322` ;
 do
+	# if mod 10 is not 0, 1, or 2, then we skip
+	if [ `expr $experiment_configuration % 10` -gt 2 ] ; then
+		continue
+	fi
+	# The format is zzxxy
+	# If xx is more than 32, we skip
+	if [ `expr $experiment_configuration % 1000` -gt 322 ] ; then
+		continue
+	fi
+	# If zz is more than 31
+	if [ `expr $experiment_configuration / 1000` -gt 31 ] ; then
+		continue
+	fi
+
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
 
@@ -157,8 +173,14 @@ do
 	touch "$execution_output_file"
 
     # Set the parameters of this experiment:
-    # overlap_x=$experiment_configuration
-	overlap_x=10
+	# overlap_x = (experiment_configuration/10)%100
+	overlap_x=`expr $experiment_configuration / 10 % 100`
+	step_kernel_version=`expr $experiment_configuration % 10`
+
+	echo "overlap_x=$overlap_x" >> $experiment_log_file
+	echo "step_kernel_version=$step_kernel_version" >> $experiment_log_file
+
+
 
 
 	# Compile the application (make clean, then make)
@@ -173,7 +195,7 @@ do
     echo "Running the application" >> $experiment_log_file
     echo "Running the application" >> $job_log_file
     
-    $test_app_source_directory/LBM $overlap_x > "$execution_output_file" 2>&1
+    $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
 done
 
 

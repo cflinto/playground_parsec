@@ -84,7 +84,9 @@ void d2q9_LBM_step_caller(Grid grid,
                 bool has_to_interface_horizontal,
                 bool has_to_interface_vertical,
                 PRECISION *interface_down, PRECISION *interface_up,
-                int subgridX, int subgridY)
+                int subgridX, int subgridY,
+                int kernel_version // 0=original, 1=all threads on the logical domain, 2=one block per line
+                )
 {
     // wrap the arrays
     SubgridArray subgrid_FROM_D_wrapped;
@@ -99,27 +101,79 @@ void d2q9_LBM_step_caller(Grid grid,
     //     has_from_interface_horizontal, has_from_interface_vertical, has_to_interface_horizontal, has_to_interface_vertical);
 
     int cellNum = (grid.subgridTrueSize[0]-2*horizontal_uncomputed_number) * (grid.subgridTrueSize[1]-2*vertical_uncomputed_number);
+    if(kernel_version == 0)
+    {
+        cellNum = grid.subgridTrueSize[0] * grid.subgridTrueSize[1];
+    }
     int thread_num = 128; // Fine-tuned
     int block_num = (cellNum + thread_num - 1) / thread_num;
     while(block_num > 16384)
     {
         block_num /= 2;
     }
+    if(kernel_version == 2)
+    {
+        block_num = grid.subgridTrueSize[1]-2*vertical_uncomputed_number;
+        thread_num = grid.subgridTrueSize[0]-2*horizontal_uncomputed_number;
+        while(thread_num > 1024)
+        {
+            thread_num /= 2;
+        }
+    }
     
-    recordStart("LBM_step");
-    d2q9_LBM_step<<<//grid.subgridTrueSize[1]-vertical_uncomputed_number*2
-                block_num, thread_num>>>(grid,
-                subgrid_FROM_D_wrapped,
-                subgrid_TO_D_wrapped,
-                horizontal_uncomputed_number, vertical_uncomputed_number,
-                has_from_interface_horizontal,
-                has_from_interface_vertical,
-                has_to_interface_horizontal,
-                has_to_interface_vertical,
-                interface_down, interface_up,
-                subgridX, subgridY);
-    recordEnd("LBM_step");
-    gpuErrchk(cudaPeekAtLastError());
+    if(kernel_version == 0)
+    {
+        recordStart("LBM_step");
+        d2q9_LBM_step_original<<<
+                    block_num, thread_num>>>(grid,
+                    subgrid_FROM_D_wrapped,
+                    subgrid_TO_D_wrapped,
+                    horizontal_uncomputed_number, vertical_uncomputed_number,
+                    has_from_interface_horizontal,
+                    has_from_interface_vertical,
+                    has_to_interface_horizontal,
+                    has_to_interface_vertical,
+                    interface_down, interface_up,
+                    subgridX, subgridY);
+        recordEnd("LBM_step");
+    }
+    else if(kernel_version == 1)
+    {
+        recordStart("LBM_step");
+        d2q9_LBM_step_all_threads_domain<<<
+                    block_num, thread_num>>>(grid,
+                    subgrid_FROM_D_wrapped,
+                    subgrid_TO_D_wrapped,
+                    horizontal_uncomputed_number, vertical_uncomputed_number,
+                    has_from_interface_horizontal,
+                    has_from_interface_vertical,
+                    has_to_interface_horizontal,
+                    has_to_interface_vertical,
+                    interface_down, interface_up,
+                    subgridX, subgridY);
+        recordEnd("LBM_step");
+    }
+    else if(kernel_version == 2)
+    {
+        recordStart("LBM_step");
+        d2q9_LBM_step_one_block_per_line<<<
+                    block_num, thread_num>>>(grid,
+                    subgrid_FROM_D_wrapped,
+                    subgrid_TO_D_wrapped,
+                    horizontal_uncomputed_number, vertical_uncomputed_number,
+                    has_from_interface_horizontal,
+                    has_from_interface_vertical,
+                    has_to_interface_horizontal,
+                    has_to_interface_vertical,
+                    interface_down, interface_up,
+                    subgridX, subgridY);
+        recordEnd("LBM_step");
+    }
+    else
+    {
+        printf("Error: unknown kernel version\n");
+        exit(1);
+    }
 
 }
 
@@ -513,9 +567,8 @@ void d2q9_read_vertical_slices(Grid grid, SubgridArray subgridWrapped, PRECISION
 
 
 
-// time step kernel
 __global__
-void d2q9_LBM_step(Grid grid,
+void d2q9_LBM_step_original(Grid grid,
                         SubgridArray subgrid_FROM_D,
                         SubgridArray subgrid_TO_D,
                         int horizontal_uncomputed_number, int vertical_uncomputed_number,
@@ -658,9 +711,157 @@ void d2q9_LBM_step(Grid grid,
     }
 }
 
+__global__
+void d2q9_LBM_step_all_threads_domain(Grid grid,
+                        SubgridArray subgrid_FROM_D,
+                        SubgridArray subgrid_TO_D,
+                        int horizontal_uncomputed_number, int vertical_uncomputed_number,
+                        bool has_from_interface_horizontal,
+                        bool has_from_interface_vertical,
+                        bool has_to_interface_horizontal,
+                        bool has_to_interface_vertical,
+                        PRECISION *interface_down, PRECISION *interface_up,
+                        int subgridX, int subgridY)
+{
+    int stride = blockDim.x * gridDim.x;
+
+    int dimX = grid.subgridTrueSize[0] - 2*horizontal_uncomputed_number;
+    int dimY = grid.subgridTrueSize[1] - 2*vertical_uncomputed_number;
+    int cellNum = dimX * dimY;
+
+    for (int id = blockIdx.x * blockDim.x + threadIdx.x; id < cellNum; id += stride)
+    {
+        int rx = id % dimX;
+        int ry = id / dimX;
+        int subgrid_true_x = horizontal_uncomputed_number + rx;
+        int subgrid_true_y = vertical_uncomputed_number + ry;
+
+        // bool isInComputationArea=
+        //     !(
+        //     subgrid_true_x < horizontal_uncomputed_number || subgrid_true_x >= grid.subgridTrueSize[0] - horizontal_uncomputed_number ||
+        //     subgrid_true_y < vertical_uncomputed_number || subgrid_true_y >= grid.subgridTrueSize[1] - vertical_uncomputed_number
+        //     );
+
+
+        PRECISION f[3][3];
+
+        // shift
+        for(int d=0; d<grid.directionsNumber; d++)
+        {
+            PRECISION *target_FROM_subgrid = subgrid_FROM_D.subgrid[d];
+
+            for(int c=0; c<grid.conservativesNumber; c++)
+            {
+                int i=c+d*grid.conservativesNumber;
+
+                int target_true_x = subgrid_true_x - get_dir(i,0);
+                int target_true_y = subgrid_true_y - get_dir(i,1);
+
+                int position_in_interface_down_x = target_true_x;
+                int position_in_interface_down_y = target_true_y;
+                int position_in_interface_up_x = target_true_x;
+                int position_in_interface_up_y = target_true_y - grid.subgridTrueSize[1] + grid.overlapSize[1];
+
+
+                if(has_from_interface_vertical && position_in_interface_down_y >= 0 && position_in_interface_down_y < grid.overlapSize[1] && d==2)
+                { // Read from the down interface
+                    assert(target_true_y == 0);
+                    assert(grid.overlapSize[1] == 1);
+                    f[d][c] = interface_down[c*grid.subgridTrueSize[0] + position_in_interface_down_x];
+                }
+                else if(has_from_interface_vertical && position_in_interface_up_y >= 0 && position_in_interface_up_y < grid.overlapSize[1] && d==0)
+                { // Read from the up interface
+                    assert(target_true_y == grid.subgridTrueSize[1] - 1);
+                    assert(grid.overlapSize[1] == 1);
+                    f[d][c] = interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x];
+                }
+                else// if(isInComputationArea)
+                { // Main case: in the logical space
+                    f[d][c] = target_FROM_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + target_true_y * grid.subgridTrueSize[0] + target_true_x];
+                }
+            }
+        }
+
+        // // relax
+        
+        // if(isInComputationArea)
+        // {
+            // compute x and y as PRECISIONs on the whole grid (xg and yg)
+            int true_x = subgrid_true_x;
+            int true_y = subgrid_true_y;
+            int logical_x = true_x - grid.overlapSize[0];
+            int logical_y = true_y - grid.overlapSize[1];
+            int xgInt = logical_x + subgridX * grid.subgridOwnedSize[0];
+            int ygInt = logical_y + subgridY * grid.subgridOwnedSize[1];
+            PRECISION xg = grid.physicalMinCoords[0] + (((PRECISION)xgInt + 0.5) * grid.physicalSize[0] / (PRECISION)grid.size[0]);
+            PRECISION yg = grid.physicalMinCoords[1] + (((PRECISION)ygInt + 0.5) * grid.physicalSize[1] / (PRECISION)grid.size[1]);
+
+            PRECISION w[3];
+
+            // f equilibrium
+            kin_to_fluid(&f[0][0], w);
+            PRECISION feq[3][3];
+            fluid_to_kin(w, &feq[0][0]);
+
+            // f fixed (for boundary conditions)
+            PRECISION ffixed[3][3];
+            if(is_in_cylinder(xg, yg))
+            {
+                d2q9_t0(w, xg, yg);
+                fluid_to_kin(w, &ffixed[0][0]);
+            }
+
+
+            for(int d=0; d<grid.directionsNumber; d++)
+            {
+                for(int c=0; c<grid.conservativesNumber; c++)
+                {
+                    f[d][c] = OMEGA_RELAX*feq[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
+                    if(is_in_cylinder(xg, yg))
+                    {
+                        f[d][c] = OMEGA_RELAX*ffixed[d][c] + ((PRECISION)1 - OMEGA_RELAX)*f[d][c];
+                    }
+                }
+            }
+        // }
+
+        int position_in_interface_right_x = subgrid_true_x - grid.subgridOwnedSize[0];
+        int position_in_interface_right_y = subgrid_true_y;
+
+        int position_in_interface_down_x = subgrid_true_x;
+        int position_in_interface_down_y = subgrid_true_y - grid.overlapSize[1];
+        int position_in_interface_up_x = subgrid_true_x;
+        int position_in_interface_up_y = subgrid_true_y - grid.subgridOwnedSize[1];
+
+        for(int d=0; d<grid.directionsNumber; d++)
+        {
+            PRECISION *target_TO_subgrid = subgrid_TO_D.subgrid[d];
+            for(int c=0; c<grid.conservativesNumber; c++)
+            {
+                if(has_to_interface_vertical && position_in_interface_down_y >= 0 && position_in_interface_down_y < grid.overlapSize[1] && d==0)
+                {
+                    assert(grid.overlapSize[1] == 1);
+                    interface_down[c*grid.subgridTrueSize[0] + position_in_interface_down_x] = f[d][c];
+                }
+                if(has_to_interface_vertical && position_in_interface_up_y >= 0 && position_in_interface_up_y < grid.overlapSize[1] && d==2)
+                {
+                    assert(grid.overlapSize[1] == 1);
+                    interface_up[c*grid.subgridTrueSize[0] + position_in_interface_up_x] = f[d][c];
+                }
+                
+                // In we are in the computation area, we write to the subgrid
+                // if(isInComputationArea)
+                {
+                    target_TO_subgrid[c*grid.subgridTrueSize[0]*grid.subgridTrueSize[1] + subgrid_true_y * grid.subgridTrueSize[0] + subgrid_true_x] = f[d][c];
+                }
+            }
+        }
+    }
+}
+
 // Same kernel, but opimized
 __global__
-void d2q9_LBM_step_optimized(Grid grid,
+void d2q9_LBM_step_one_block_per_line(Grid grid,
                         SubgridArray subgrid_FROM_D,
                         SubgridArray subgrid_TO_D,
                         int horizontal_uncomputed_number, int vertical_uncomputed_number,
