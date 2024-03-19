@@ -165,7 +165,6 @@ plt.xlabel('overlap_x')
 plt.ylabel('Execution time (s)')
 plt.title('Execution times of the D2Q9 kernels (naive LBM_step)', fontsize=24)
 plt.xticks(index + bar_width, overlaps)
-plt.tight_layout()
 
 
 # Set the y min and max values to the min and max of the LBM_step kernel

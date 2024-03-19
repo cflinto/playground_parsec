@@ -164,7 +164,6 @@ plt.xlabel('overlap_x')
 plt.ylabel('Execution time (s)')
 plt.title('Execution times of the D2Q9 kernels', fontsize=24)
 plt.xticks(index + bar_width, overlaps)
-plt.tight_layout()
 
 
 # Set the y min and max values to the min and max of the LBM_step kernel
@@ -175,7 +174,7 @@ for overlap in overlaps:
         if (overlap, step_kernel_ids[i], 'LBM_step') in kernel_times:
             ymin = min(ymin, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
             ymax = max(ymax, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
-plt.ylim([ymin*0.99, ymax*1.03])
+plt.ylim([ymin*0.99, ymax*1.04])
 
 # The legend is the colors of the bars
 import matplotlib.patches as mpatches
