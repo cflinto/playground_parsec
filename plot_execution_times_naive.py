@@ -176,7 +176,7 @@ for overlap in overlaps:
         if (overlap, step_kernel_ids[i], 'LBM_step') in kernel_times:
             ymin = min(ymin, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
             ymax = max(ymax, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
-plt.ylim([ymin*0.99, ymax*1.01])
+plt.ylim([ymin*0.99, ymax*1.02])
 
 # The legend is the colors of the bars
 import matplotlib.patches as mpatches
