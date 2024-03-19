@@ -623,7 +623,7 @@ BODY
                 rank, s);
 
     sprintf(current_filename, "data_t=%.4f.dat", t);
-    d2q9_view_python(current_filename, gridParameters, mat);
+    // d2q9_view_python(current_filename, gridParameters, mat); // Dont save for the benchmark
 END
 
 // writeBack(subgrid_x, subgrid_y, d)
