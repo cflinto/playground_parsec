@@ -98,7 +98,7 @@ overlaps.sort()
 step_kernel_ids.sort()
 kernel_names.sort()
 
-# overlaps = [i for i in range(1, 21)]
+overlaps = [i for i in range(12, 21)]
 
 print(overlaps)
 print(step_kernel_ids)
@@ -116,54 +116,53 @@ print(kernel_names)
 
 fig, ax = plt.subplots( figsize=(12, 8) )
 index = np.arange(len(overlaps))
-bar_width = 0.5
+bar_width = 0.25
 opacity = 0.8
 
 CB_color_cycle = ['#377eb8', '#ff7f00', '#4daf4a',
                   '#f781bf', '#a65628', '#984ea3',
                   '#999999', '#e41a1c', '#dede00']
 
-#for i in range(len(step_kernel_ids)):
-i = 0 # Only plot the best kernel to avoid overloading
-for kernel_name in 'write_horizontal_slices', 'read_horizontal_slices', 'read_vertical_slices', 'LBM_step':
-    for overlap in overlaps:
-        # Verify that ALL the kernels kernel_times[(overlap, step_kernel_ids[i], ....)] exist (... = any kernel_name)
-        if (overlap, step_kernel_ids[i], 'write_horizontal_slices') not in kernel_times:
-            continue
-        if (overlap, step_kernel_ids[i], 'read_horizontal_slices') not in kernel_times:
-            continue
-        if (overlap, step_kernel_ids[i], 'read_vertical_slices') not in kernel_times:
-            continue
-        if (overlap, step_kernel_ids[i], 'LBM_step') not in kernel_times:
-            continue
+for i in range(len(step_kernel_ids)):
+    for kernel_name in 'write_horizontal_slices', 'read_horizontal_slices', 'read_vertical_slices', 'LBM_step':
+        for overlap in overlaps:
+            # Verify that ALL the kernels kernel_times[(overlap, step_kernel_ids[i], ....)] exist (... = any kernel_name)
+            if (overlap, step_kernel_ids[i], 'write_horizontal_slices') not in kernel_times:
+                continue
+            if (overlap, step_kernel_ids[i], 'read_horizontal_slices') not in kernel_times:
+                continue
+            if (overlap, step_kernel_ids[i], 'read_vertical_slices') not in kernel_times:
+                continue
+            if (overlap, step_kernel_ids[i], 'LBM_step') not in kernel_times:
+                continue
 
-        pattern=''
-        # if i == 0:
-        #     pattern = '\\\\'
-        # elif i == 1:
-        #     pattern = '..'
-        # elif i == 2:
-        #     pattern = '//'
+            pattern=''
+            if i == 0:
+                pattern = '\\\\'
+            elif i == 1:
+                pattern = '..'
+            elif i == 2:
+                pattern = '//'
 
-        height = 0
-        if kernel_name == 'write_horizontal_slices':
-            color = CB_color_cycle[3]
-            height = kernel_times[(overlap, step_kernel_ids[i], 'write_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
-        elif kernel_name == 'read_horizontal_slices':
-            color = CB_color_cycle[2]
-            height = kernel_times[(overlap, step_kernel_ids[i], 'read_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
-        elif kernel_name == 'read_vertical_slices':
-            color = CB_color_cycle[1]
-            height = kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
-        elif kernel_name == 'LBM_step':
-            color = CB_color_cycle[0]
-            height = kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
-        plt.bar((overlap-1) + (i+1)*bar_width, height, bar_width, alpha=opacity, color=color, hatch=pattern)
+            height = 0
+            if kernel_name == 'write_horizontal_slices':
+                color = CB_color_cycle[3]
+                height = kernel_times[(overlap, step_kernel_ids[i], 'write_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
+            elif kernel_name == 'read_horizontal_slices':
+                color = CB_color_cycle[2]
+                height = kernel_times[(overlap, step_kernel_ids[i], 'read_horizontal_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
+            elif kernel_name == 'read_vertical_slices':
+                color = CB_color_cycle[1]
+                height = kernel_times[(overlap, step_kernel_ids[i], 'read_vertical_slices')]+kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
+            elif kernel_name == 'LBM_step':
+                color = CB_color_cycle[0]
+                height = kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')]
+            plt.bar((overlap-12) + i*bar_width, height, bar_width, alpha=opacity, color=color, hatch=pattern)
 
 
 plt.xlabel('overlap_x')
 plt.ylabel('Execution time (s)')
-plt.title('Execution times of the D2Q9 kernels (naive LBM_step)', fontsize=24)
+plt.title('Execution times of the D2Q9 kernels', fontsize=24)
 plt.xticks(index + bar_width, overlaps)
 plt.tight_layout()
 
@@ -172,12 +171,11 @@ plt.tight_layout()
 ymin = 99999
 ymax = 0
 for overlap in overlaps:
-    # for i in range(len(step_kernel_ids)):
-        i = 0
+    for i in range(len(step_kernel_ids)):
         if (overlap, step_kernel_ids[i], 'LBM_step') in kernel_times:
             ymin = min(ymin, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
             ymax = max(ymax, kernel_times[(overlap, step_kernel_ids[i], 'LBM_step')])
-plt.ylim([ymin*0.99, ymax*1.01])
+plt.ylim([ymin*0.99, ymax*1.03])
 
 # The legend is the colors of the bars
 import matplotlib.patches as mpatches
@@ -188,10 +186,10 @@ blue_patch = mpatches.Patch(facecolor=CB_color_cycle[1], edgecolor='black', labe
 green_patch = mpatches.Patch(facecolor=CB_color_cycle[2], edgecolor='black', label='read_horizontal_slices')
 yellow_patch = mpatches.Patch(facecolor=CB_color_cycle[3], edgecolor='black', label='write_horizontal_slices')
 plt.legend(handles=[red_patch, blue_patch, green_patch, yellow_patch])
-# # Hatch patterns, white background, black patterns
-# backslash_patch = mpatches.Patch(hatch='\\\\\\\\\\\\', color='white', edgecolor='black', label='step_kernel_id=0')
-# dot_patch = mpatches.Patch(hatch='......', color='white', edgecolor='black', label='step_kernel_id=1')
-# slash_patch = mpatches.Patch(hatch='//////', color='white', edgecolor='black', label='step_kernel_id=2')
-# plt.legend(handles=[red_patch, blue_patch, green_patch, yellow_patch, backslash_patch, dot_patch, slash_patch])
+# Hatch patterns, white background, black patterns
+backslash_patch = mpatches.Patch(facecolor='white', hatch='\\\\', edgecolor='black', label='Naive step kernel')
+dot_patch = mpatches.Patch(facecolor='white', hatch='..', edgecolor='black', label='Adjusted grid step kernel')
+slash_patch = mpatches.Patch(facecolor='white', hatch='//', edgecolor='black', label='Per-line step kernel')
+plt.legend(handles=[red_patch, blue_patch, green_patch, yellow_patch, backslash_patch, dot_patch, slash_patch])
 
 plt.show()
