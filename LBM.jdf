@@ -856,14 +856,14 @@ exit(1);
     printf("############################################\n");
     printf("Global grid size (theoretical): %d x %d\n", grid.size[0], grid.size[1]);
     printf("Global grid size in memory (theoretical): %f MB\n",
-        (double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(double)/(double)1024/(double)1024);
-    double subgridSize = (double)grid.subgridTrueSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(double)/(double)1024/(double)1024;
+        (double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024);
+    double subgridSize = (double)grid.subgridTrueSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024;
     printf("Subgrid size: %f MB\n",
         subgridSize);
-    double horizontalInterfaceSize = (double)grid.overlapSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(double)/(double)1024/(double)1024;
+    double horizontalInterfaceSize = (double)grid.overlapSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024;
         printf("Horizontal interface size: %f MB\n",
         horizontalInterfaceSize);
-    double verticalInterfaceSize = (double)grid.subgridTrueSize[0]*(double)grid.overlapSize[1]*grid.conservativesNumber*sizeof(double)/(double)1024/(double)1024;
+    double verticalInterfaceSize = (double)grid.subgridTrueSize[0]*(double)grid.overlapSize[1]*grid.conservativesNumber*sizeof(PRECISION)/(double)1024/(double)1024;
     printf("Vertical interface size: %f MB\n",
         verticalInterfaceSize);
     printf("Size of all the subgrids: %f MB\n",
@@ -875,8 +875,8 @@ exit(1);
 
     float stepTime=getTotalTime("LBM_step");
     printf("Processed data per second: %f GB/s (%fGB/%fs)\n",
-        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(double)/(double)1024/(double)1024/(double)1024/(stepTime/1000),
-        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(double)/(double)1024/(double)1024/(double)1024,
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(PRECISION)/(double)1024/(double)1024/(double)1024/(stepTime/1000),
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(PRECISION)/(double)1024/(double)1024/(double)1024,
         stepTime/1000);
 
     // Print the per-kernel summary
