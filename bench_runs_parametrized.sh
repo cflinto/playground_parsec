@@ -126,39 +126,8 @@ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/cflint/parsec_project/parsec/build/parsec
 export PKG_CONFIG_PATH
 export LD_LIBRARY_PATH
 
-# Perform all the combinations thread_num x block_num
-possible_thread_nums="64 128 192 256"
-possible_block_nums="256 512 1024 2048"
-
-# Generate the list of all the combinations
-# We will use the following format: "thread_num block_num"
-# The list will be separated by a newline character
-# The list will be stored in the variable "combinations"
-combinations=""
-for thread_num in $possible_thread_nums ; do
-	for block_num in $possible_block_nums ; do
-		combinations="$combinations$thread_num $block_num\n"
-	done
-done
-
-# Experiments are integers zxy, where x is the overlap_x and y is the step_kernel_version, and z is for the multiple runs of the same configuration
-# Hence, we go like this: 10, 11, 12, 20, 21, 22, 30, 31, 32, , 40, 41, 42, ..., 320, 321, 322
-for experiment_configuration in `seq 10 32322` ;
+for experiment_configuration in `seq 1 32` ;
 do
-	# if mod 10 is not 0, 1, or 2, then we skip
-	if [ `expr $experiment_configuration % 10` -gt 2 ] ; then
-		continue
-	fi
-	# The format is zzxxy
-	# If xx is more than 32, we skip
-	if [ `expr $experiment_configuration % 1000` -gt 322 ] ; then
-		continue
-	fi
-	# If zz is more than 31
-	if [ `expr $experiment_configuration / 1000` -gt 31 ] ; then
-		continue
-	fi
-
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
 
@@ -173,22 +142,19 @@ do
 
 	touch "$execution_output_file"
 
-    # Set the parameters of this experiment:
-	# overlap_x = (experiment_configuration/10)%100
-	overlap_x=`expr $experiment_configuration / 10 % 100`
-	step_kernel_version=`expr $experiment_configuration % 10`
+	overlap_x=16
+	step_kernel_version=0
 
 	echo "overlap_x=$overlap_x" >> $experiment_log_file
 	echo "step_kernel_version=$step_kernel_version" >> $experiment_log_file
 
+	# # Compile the application (make clean, then make)
+	# cd "$test_app_source_directory"
+	# make clean
+	# # The first make always fails, so we run two makes
+	# make || make
 
-
-
-	# Compile the application (make clean, then make)
-	cd "$test_app_source_directory"
-	make clean
-	# The first make always fails, so we run two makes
-	make || make
+	# Assume that the application is already compiled
 
     cd "$experiment_directory"
 
@@ -196,7 +162,9 @@ do
     echo "Running the application" >> $experiment_log_file
     echo "Running the application" >> $job_log_file
     
-    $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+	# Comment one or the other depending on what you want to test
+    $test_app_source_directory/LBM_non_parametrized $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+    # $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
 done
 
 
