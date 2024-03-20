@@ -10,6 +10,8 @@ if [ -z "$job_id" ] ; then
 else
 	is_on_cluster=1
 	user_alias=`pwd | cut -d/ -f3`
+
+	job_id=2704706 # TODO, this is tinkering to rerun the same job
 fi
 
 root_directory=`pwd`
@@ -23,10 +25,10 @@ if [ "$is_on_cluster" -eq 1 ] ; then
 	source "$test_app_source_directory/modules.sh"
 fi
 
-if [ -d "$job_output_directory" ] ; then
-	echo "folder $job_output_directory already exists, aborting" 1>&2
-	exit
-fi
+# if [ -d "$job_output_directory" ] ; then
+# 	echo "folder $job_output_directory already exists, aborting" 1>&2
+# 	exit
+# fi
 
 mkdir -p "$job_output_directory"
 
@@ -160,6 +162,12 @@ do
 
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
+
+	# if $experiment_directory already exists, skip
+	if [ -d "$experiment_directory" ] ; then
+		echo "folder $experiment_directory already exists, skipping" > $job_log_file
+		continue
+	fi
 
 	mkdir -p "$experiment_directory"
 	touch "$experiment_log_file"
