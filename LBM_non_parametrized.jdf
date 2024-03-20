@@ -1,0 +1,1008 @@
+extern "C" %{
+
+void gpuAssert(cudaError_t code, const char *file, int line, bool abort)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort)
+			exit(code);
+	}
+}
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+#include <stdio.h>
+#include <sys/time.h>
+#include <math.h>
+
+#include "parsec.h"
+#include "parsec/data_dist/matrix/matrix.h"
+#include "parsec/data_dist/matrix/two_dim_rectangle_cyclic.h"
+#include "parsec/data_dist/multidimensional_grid.h"
+
+#include "cublas_v2.h"
+
+#include "LBM.cuh"
+#include "LBM_common.h"
+
+Grid newGrid(int rank, int nodes, int overlap_x)
+{
+	Grid grid;
+
+	grid.size[0] = PROBLEM_SIZE_X;
+	grid.size[1] = PROBLEM_SIZE_Y;
+    grid.conservativesNumber = 3;
+    grid.directionsNumber = 3;
+
+	grid.subgridNumber[0] = 3;
+	grid.subgridNumber[1] = 3;
+	grid.subgridOwnedSize[0] = grid.size[0] / grid.subgridNumber[0];
+	grid.subgridOwnedSize[1] = grid.size[1] / grid.subgridNumber[1];
+
+    grid.sharedLayers[0][0] = 0;
+    grid.sharedLayers[0][1] = 0;
+    grid.sharedLayers[1][0] = 0;
+    grid.sharedLayers[1][1] = 0;
+
+    for(int d=0;d<DIMENSIONS_NUMBER;++d)
+    {
+        grid.subgridLogicalSize[d] = grid.subgridOwnedSize[d] + grid.sharedLayers[d][0] + grid.sharedLayers[d][1];
+    }
+
+
+	grid.overlapSize[0] = overlap_x;
+	grid.overlapSize[1] = 1;
+
+	grid.currentSubgrid = 0;
+
+	grid.physicalMinCoords[0] = -1;
+	grid.physicalMinCoords[1] = -4;
+	grid.physicalSize[0] = 16;
+	grid.physicalSize[1] = 8;
+
+	grid.subgridTrueSize[0] = grid.subgridLogicalSize[0] + 2 * grid.overlapSize[0];
+	grid.subgridTrueSize[1] = grid.subgridLogicalSize[1] + 2 * grid.overlapSize[1];
+	grid.cellsPerSubgrid = (grid.subgridTrueSize[0]) * (grid.subgridTrueSize[1] * grid.conservativesNumber);
+	grid.subgridsNumber = grid.subgridNumber[0] * grid.subgridNumber[1];
+
+    grid.sizeOfSavedData[0] = SAVED_DATA_SIZE_X;
+    grid.sizeOfSavedData[1] = SAVED_DATA_SIZE_Y;
+    grid.saveStencilSize[0] = SAVE_STENCIL_X;
+    grid.saveStencilSize[1] = SAVE_STENCIL_Y;
+
+    for(int d=0;d<DIMENSIONS_NUMBER;++d)
+    {
+        assert(grid.size[d] % grid.subgridOwnedSize[d] == 0);
+        assert(grid.subgridNumber[d]*grid.subgridOwnedSize[d] == grid.size[d]);
+        assert(grid.subgridOwnedSize[d] <= grid.subgridLogicalSize[d]);
+        assert(grid.subgridLogicalSize[d] <= grid.subgridTrueSize[d]);
+        assert(grid.saveStencilSize[d]*grid.sizeOfSavedData[d] == grid.size[d]);
+    }
+
+    grid.desc = malloc(sizeof(parsec_multidimensional_grid_t));
+
+    // Initialize the grid
+    parsec_multidimensional_grid_init((parsec_multidimensional_grid_t*)grid.desc,
+#if defined(DOUBLE_PRECISION)
+                            PARSEC_MATRIX_DOUBLE,
+#else
+                            PARSEC_MATRIX_FLOAT,
+#endif
+                            nodes, rank,
+                            DIMENSIONS_NUMBER+1, DIMENSIONS_NUMBER,
+                            grid.subgridNumber[0], grid.subgridNumber[1], grid.directionsNumber,
+                            grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber,
+                            1, 1, 1); // TODO, maybe the stencil should be NxNxgrid.conservativesNumberxgrid.directionsNumber
+    ((parsec_multidimensional_grid_t*)grid.desc)->grid = parsec_data_allocate((size_t)((parsec_multidimensional_grid_t*)grid.desc)->nb_local_tiles *
+                                    (size_t)((parsec_multidimensional_grid_t*)grid.desc)->bsiz *
+                                    (size_t)parsec_datadist_getsizeoftype(((parsec_multidimensional_grid_t*)grid.desc)->mtype));
+
+    assert(((parsec_multidimensional_grid_t*)grid.desc)->grid != NULL);
+
+    parsec_data_collection_set_key((parsec_data_collection_t*)&grid.desc, "grid.desc[");
+    
+	return grid;
+}
+
+PRECISION get_dt(Grid grid)
+{
+    PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
+    return CFL * delta_x / MAXIMUM_VELOCITY;
+}
+
+typedef cublasStatus_t (*cublas_dgemm_v2_t) ( cublasHandle_t handle,
+                            cublasOperation_t transa, cublasOperation_t transb,
+                            int m, int n, int k,
+                            const PRECISION *alpha,
+                            const PRECISION *A, int lda,
+                            const PRECISION *B, int ldb,
+                            const PRECISION *beta,
+                            PRECISION       *C, int ldc);
+
+
+#if defined(PARSEC_HAVE_CUDA)
+static void destruct_cublas_handle(void *p)
+{
+    cublasHandle_t handle = (cublasHandle_t)p;
+    cublasStatus_t status;
+    if(NULL != handle) {
+        status = cublasDestroy(handle);
+        assert(status == CUBLAS_STATUS_SUCCESS);
+        (void)status;
+    }
+}
+
+static void *create_cublas_handle(void *obj, void *p)
+{
+    cublasHandle_t handle;
+    cublasStatus_t status;
+    parsec_cuda_exec_stream_t *stream = (parsec_cuda_exec_stream_t *)obj;
+    (void)p;
+    /* No need to call cudaSetDevice, as this has been done by PaRSEC before calling the task body */
+    status = cublasCreate(&handle);
+    assert(CUBLAS_STATUS_SUCCESS == status);
+    status = cublasSetStream(handle, stream->cuda_stream);
+    assert(CUBLAS_STATUS_SUCCESS == status);
+    (void)status;
+    return (void*)handle;
+}
+#endif
+
+static void destroy_cublas_handle(void *_h, void *_n)
+{
+#if defined(PARSEC_HAVE_CUDA)
+    cublasHandle_t cublas_handle = (cublasHandle_t)_h;
+    cublasDestroy_v2(cublas_handle);
+#endif
+    (void)_n;
+    (void)_h;
+}
+
+#define MAX_SUBGRIDS_X 10
+#define MAX_SUBGRIDS_Y 10
+struct timeval first_task_time[MAX_SUBGRIDS_X][MAX_SUBGRIDS_Y], last_task_time[MAX_SUBGRIDS_X][MAX_SUBGRIDS_Y];
+
+//////////////////////////////////////////////////
+///////////////  View functions  /////////////////
+//////////////////////////////////////////////////
+
+#define MPI_WRITE_BUFFER_SIZE 1024
+
+void d2q9_view_python(char *filename, Grid grid, PRECISION *data_grid_to_save)
+{
+	MPI_File gplt;
+    MPI_Status status;
+
+    if(MPI_File_open(MPI_COMM_SELF, filename, MPI_MODE_CREATE|MPI_MODE_WRONLY,MPI_INFO_NULL, &gplt) != MPI_SUCCESS)
+    {
+        fprintf(stderr, "Error opening file %s\n", filename);
+        return;
+    }
+
+    char *buffer = malloc(MPI_WRITE_BUFFER_SIZE);
+
+	PRECISION dx = grid.physicalSize[0] / (PRECISION)grid.sizeOfSavedData[0];
+	PRECISION dy = grid.physicalSize[1] / (PRECISION)grid.sizeOfSavedData[1];
+    assert(abs(dx - dy) < 1e-10);
+
+	for (size_t x = 0; x < grid.sizeOfSavedData[0]; x++)
+	{
+        sprintf(buffer, "%f\n", x * dx + grid.physicalMinCoords[0]);
+        MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+	}
+	//fprintf(gplt, "\n");
+    sprintf(buffer, "\n");
+    MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+	for (size_t y = 0; y < grid.sizeOfSavedData[1]; y++)
+	{
+        sprintf(buffer, "%f\n", y * dy + grid.physicalMinCoords[1]);
+        MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+	}
+    sprintf(buffer, "\n");
+    MPI_File_write(gplt, buffer, strlen(buffer), MPI_CHAR, &status);
+
+    MPI_File_sync(gplt);
+
+    int counter = 0;
+	for (int y = 0; y < grid.sizeOfSavedData[1]; y++)
+	{
+		for (int x = 0; x < grid.sizeOfSavedData[0]; x++)
+		{
+            PRECISION cd_vector[grid.directionsNumber][grid.conservativesNumber];
+            for(int d=0; d<grid.directionsNumber; d++)
+            {
+                for(int c=0; c<grid.conservativesNumber; c++)
+                {
+                    cd_vector[d][c] = data_grid_to_save[
+                        grid.conservativesNumber*grid.sizeOfSavedData[0]*grid.sizeOfSavedData[1]*d +
+                        grid.sizeOfSavedData[0]*grid.sizeOfSavedData[1]*c +
+                        grid.sizeOfSavedData[0]*y +
+                        x
+                        ];
+                }
+            }
+
+			// PRECISION value = cd_vector[0][0] + cd_vector[1][0] + cd_vector[2][0] + cd_vector[0][1] + cd_vector[1][1] + cd_vector[2][1] + cd_vector[0][2] + cd_vector[1][2] + cd_vector[2][2];
+            // // set value to whatever function of the cd vector you want to plot
+            PRECISION w[3];
+            kin_to_fluid(cd_vector, w);
+            PRECISION value = sqrt(w[1]*w[1] + w[2]*w[2]);
+            //PRECISION value = w[0];
+
+            counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "%f ", value);
+            
+            if(counter >= MPI_WRITE_BUFFER_SIZE-32) // Assuming a PRECISION is no more than 29 characters
+            {
+                if(MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status ) != MPI_SUCCESS)
+                {
+                    fprintf(stderr, "Error writing to file %s: error %d\n", filename, status.MPI_ERROR);
+                }
+                MPI_File_sync(gplt);
+                counter = 0;
+            }
+        }
+        counter += snprintf(buffer+counter, MPI_WRITE_BUFFER_SIZE-counter, "\n");
+	}
+
+    if(counter != 0)
+    {
+        if(MPI_File_write(gplt, buffer, counter, MPI_CHAR, &status) != MPI_SUCCESS)
+        {
+            fprintf(stderr, "Error writing to file %s: error %d\n", filename, status.MPI_ERROR);
+        }
+    }
+
+    MPI_File_sync(gplt);
+
+	if(MPI_File_close(&gplt) != MPI_SUCCESS)
+    {
+        fprintf(stderr, "Error closing file %s\n", filename);
+    }
+    free(buffer);
+}
+
+%}
+
+
+descGridD             [ type="parsec_multidimensional_grid_t*" ]
+gridParameters        [ type="Grid" ]
+
+rank                  [ type="int" ]
+nodes                 [ type="int" ]
+subgrid_number_x      [ type="int" ]
+subgrid_number_y      [ type="int" ]
+subgrid_size_x        [ type="int" ]
+subgrid_size_y        [ type="int" ]
+conservatives_number  [ type="int" ]
+directions_number     [ type="int" ]
+overlap_x             [ type="int" ]
+overlap_y             [ type="int" ]
+number_of_steps       [ type="int" ]
+save_interval         [ type="int" ]
+step_kernel_version   [ type="int" ]
+CuHI                  [type = "parsec_info_id_t"]
+
+
+FillGrid(subgrid_x, subgrid_y, d)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+d = 0 .. directions_number-1
+
+: descGridD(subgrid_x, subgrid_y, d)
+
+
+RW SUBGRID_D
+    <- descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    //-> SUBGRID_FROM[d_it = d] LBM_STEP(subgrid_x, subgrid_y, 0) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, 0) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+
+BODY [type=CUDA]
+    PRECISION *subgrid = SUBGRID_D;
+
+    fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
+
+    gettimeofday(&first_task_time[subgrid_x][subgrid_y], NULL);
+
+    d2q9_initial_value_d_caller(gridParameters, subgrid, subgrid_x, subgrid_y, d);
+END
+
+
+LBM_STEP(subgrid_x, subgrid_y, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+s = 0 .. number_of_steps-1
+
+: descGridD(subgrid_x, subgrid_y, 0)
+
+RW INTERFACE_DOWN
+    <- (s!=0 && s%overlap_y==0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 0, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (s%overlap_y==overlap_y-1)
+        ? NEW
+        : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (s!=number_of_steps-1 && s%overlap_y==overlap_y-1 && (s%overlap_x!=overlap_x-1 || s==0))
+        // If s%overlap_x!=0, read_horizontal_slices will take care of the vertical interfaces
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+
+RW INTERFACE_UP
+    <- (s!=0 && s%overlap_y==0)
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 1, s/overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (s%overlap_y==overlap_y-1)
+        ? NEW
+        : NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (s!=number_of_steps-1 && s%overlap_y==overlap_y-1 && (s%overlap_x!=overlap_x-1 || s==0))
+        // If s%overlap_x!=0, read_horizontal_slices will take care of the vertical interfaces
+        ? VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, s/overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+
+READ SUBGRID_FROM_0
+    <- (s%save_interval == 0)
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 0, s/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s%overlap_x==0) // && s%save_interval == 0
+        ? SUBGRID_HORIZONTAL_WRITE_0 write_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- SUBGRID_TO_0 LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+READ SUBGRID_FROM_1
+    <- (s%save_interval == 0)
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 1, s/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s%overlap_x==0) // && s%save_interval == 0
+        ? SUBGRID_HORIZONTAL_WRITE_1 write_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- SUBGRID_TO_1 LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+READ SUBGRID_FROM_2
+    <- (s%save_interval == 0)
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 2, s/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s%overlap_x==0) // && s%save_interval == 0
+        ? SUBGRID_HORIZONTAL_WRITE_2 write_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- SUBGRID_TO_2 LBM_STEP(subgrid_x, subgrid_y, s-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+WRITE SUBGRID_TO_0
+    -> (s==number_of_steps-1) // Last step
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 0, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x==overlap_x-1 && s!=number_of_steps-1) // Need horizontal exchange
+        ? SUBGRID_HORIZONTAL_READ_0 read_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval==save_interval-1 && s!=number_of_steps-1) // Need save, but no horizontal exchange
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 0, s/save_interval+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval!=save_interval-1 && s!=number_of_steps-1) // Need nothing -> go to next step
+        ? SUBGRID_FROM_0 LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+WRITE SUBGRID_TO_1
+    -> (s==number_of_steps-1) // Last step
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 1, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x==overlap_x-1 && s!=number_of_steps-1) // Need horizontal exchange
+        ? SUBGRID_HORIZONTAL_READ_1 read_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval==save_interval-1 && s!=number_of_steps-1) // Need save, but no horizontal exchange
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 1, s/save_interval+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval!=save_interval-1 && s!=number_of_steps-1) // Need nothing -> go to next step
+        ? SUBGRID_FROM_1 LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+WRITE SUBGRID_TO_2
+    -> (s==number_of_steps-1) // Last step
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 2, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x==overlap_x-1 && s!=number_of_steps-1) // Need horizontal exchange
+        ? SUBGRID_HORIZONTAL_READ_2 read_horizontal_slices(subgrid_x, subgrid_y, s/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval==save_interval-1 && s!=number_of_steps-1) // Need save, but no horizontal exchange
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 2, s/save_interval+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s%overlap_x!=overlap_x-1 && s%save_interval!=save_interval-1 && s!=number_of_steps-1) // Need nothing -> go to next step
+        ? SUBGRID_FROM_2 LBM_STEP(subgrid_x, subgrid_y, s+1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+BODY [type=CUDA]
+    PRECISION *subgrid_FROM_D[gridParameters.directionsNumber];
+    PRECISION *subgrid_TO_D[gridParameters.directionsNumber];
+
+    subgrid_FROM_D[0] = SUBGRID_FROM_0;
+    subgrid_TO_D[0] = SUBGRID_TO_0;
+    subgrid_FROM_D[1] = SUBGRID_FROM_1;
+    subgrid_TO_D[1] = SUBGRID_TO_1;
+    subgrid_FROM_D[2] = SUBGRID_FROM_2;
+    subgrid_TO_D[2] = SUBGRID_TO_2;
+
+    fprintf(stderr, "[Process %d] kernel LBM_STEP GPU (%d %d %d)\n",
+               rank, subgrid_x, subgrid_y, s);
+
+
+    d2q9_LBM_step_caller(gridParameters,
+                subgrid_FROM_D,
+                subgrid_TO_D,
+                s%overlap_x+1,
+                1,//s%overlap_y+1,
+                0,
+                (s!=0 && s%overlap_y==0),
+                0,
+                (s!=number_of_steps-1 && s%overlap_y==overlap_y-1 && (s%overlap_x!=overlap_x-1 || s==0)),
+                INTERFACE_UP, INTERFACE_DOWN,
+                subgrid_x, subgrid_y,
+                step_kernel_version
+                );
+    
+    if(s == number_of_steps-1)
+    {
+        gettimeofday(&last_task_time[subgrid_x][subgrid_y], NULL);
+    }
+END
+
+read_horizontal_slices(subgrid_x, subgrid_y, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+: descGridD(subgrid_x, subgrid_y, 0)
+
+WRITE INTERFACE_LEFT_HRZ_RD
+    -> HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+WRITE INTERFACE_RIGHT_HRZ_RD
+    -> HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+RW SUBGRID_HORIZONTAL_READ_0
+    <- SUBGRID_TO_0 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_HORIZONTAL_WRITE_0 write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+RW SUBGRID_HORIZONTAL_READ_1
+    <- SUBGRID_TO_1 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_HORIZONTAL_WRITE_1 write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+RW SUBGRID_HORIZONTAL_READ_2
+    <- SUBGRID_TO_2 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> SUBGRID_HORIZONTAL_WRITE_2 write_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+BODY [type=CUDA]
+    PRECISION *subgrid_d[gridParameters.directionsNumber];
+    PRECISION *interface_left = INTERFACE_LEFT_HRZ_RD;
+    PRECISION *interface_right = INTERFACE_RIGHT_HRZ_RD;
+
+    subgrid_d[0] = SUBGRID_HORIZONTAL_READ_0;
+    subgrid_d[1] = SUBGRID_HORIZONTAL_READ_1;
+    subgrid_d[2] = SUBGRID_HORIZONTAL_READ_2;
+
+    d2q9_read_horizontal_slices_caller(gridParameters, subgrid_d, interface_left, interface_right, subgrid_x, subgrid_y);
+
+    fprintf(stderr, "[Process %d] kernel read_horizontal_slices GPU (%d %d %d)\n",
+               rank, subgrid_x, subgrid_y, s);
+END
+
+write_horizontal_slices(subgrid_x, subgrid_y, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+: descGridD(subgrid_x, subgrid_y, 0)
+
+READ INTERFACE_LEFT_HRZ_WRT
+    <- HORIZONTAL_INTERFACE horizontal_interface(subgrid_x, subgrid_y, 0, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+READ INTERFACE_RIGHT_HRZ_WRT
+    <- HORIZONTAL_INTERFACE horizontal_interface((subgrid_x+1)%subgrid_number_x, subgrid_y, 1, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+WRITE INTERFACE_UP_HRZ
+    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, (subgrid_y+1)%subgrid_number_y, 0, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+
+WRITE INTERFACE_DOWN_HRZ
+    -> VERTICAL_INTERFACE vertical_interface(subgrid_x, subgrid_y, 1, ((s+1)*overlap_x)-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+
+RW SUBGRID_HORIZONTAL_WRITE_0
+    <- SUBGRID_HORIZONTAL_READ_0 read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    // -> SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval==save_interval-1) // Need to save
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 0, (((s+1)*overlap_x+1)/save_interval)) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval!=save_interval-1) // Don't need to save
+        ? SUBGRID_FROM_0 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+RW SUBGRID_HORIZONTAL_WRITE_1
+    <- SUBGRID_HORIZONTAL_READ_1 read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    // -> SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval==save_interval-1) // Need to save
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 1, (((s+1)*overlap_x+1)/save_interval)) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval!=save_interval-1) // Don't need to save
+        ? SUBGRID_FROM_1 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+RW SUBGRID_HORIZONTAL_WRITE_2
+    <- SUBGRID_HORIZONTAL_READ_2 read_horizontal_slices(subgrid_x, subgrid_y, s) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    // -> SUBGRID_FROM[d_it=d] LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval==save_interval-1) // Need to save
+        ? SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, 2, (((s+1)*overlap_x+1)/save_interval)) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (((s+1)*overlap_x-1)%save_interval!=save_interval-1) // Don't need to save
+        ? SUBGRID_FROM_2 LBM_STEP(subgrid_x, subgrid_y, (s+1)*overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+BODY [type=CUDA]
+    PRECISION *subgrid_d[gridParameters.directionsNumber];
+    PRECISION *interface_left = INTERFACE_LEFT_HRZ_WRT;
+    PRECISION *interface_right = INTERFACE_RIGHT_HRZ_WRT;
+    PRECISION *interface_up = INTERFACE_UP_HRZ;
+    PRECISION *interface_down = INTERFACE_DOWN_HRZ;
+
+    subgrid_d[0] = SUBGRID_HORIZONTAL_WRITE_0;
+    subgrid_d[1] = SUBGRID_HORIZONTAL_WRITE_1;
+    subgrid_d[2] = SUBGRID_HORIZONTAL_WRITE_2;
+
+    d2q9_write_horizontal_slices_caller(gridParameters, subgrid_d, interface_left, interface_right, subgrid_x, subgrid_y);
+    // // synchronize cuda
+    // gpuErrchk(cudaDeviceSynchronize());
+    // gpuErrchk(cudaPeekAtLastError());
+    d2q9_read_vertical_slices_caller(gridParameters, subgrid_d, interface_down, interface_up, subgrid_x, subgrid_y);
+
+    fprintf(stderr, "[Process %d] kernel write_horizontal_slices GPU (%d %d %d)\n", rank, subgrid_x, subgrid_y, s);
+END
+
+vertical_interface(x, y, side, s)
+
+x = 0 .. subgrid_number_x-1
+y = 0 .. subgrid_number_y-1
+side = 0 .. 1
+s = 0 .. (number_of_steps-overlap_y-1)/overlap_y
+
+: descGridD(x, y, 0)
+
+RW VERTICAL_INTERFACE
+    // Cases where we get the vertical interfaces directly with LBM_STEP
+    <- (side==0 && (((s+1)*overlap_y-1)%overlap_x!=0 || s==0))
+        ? INTERFACE_UP LBM_STEP(x, (y+subgrid_number_y-1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (side==1 && (((s+1)*overlap_y-1)%overlap_x!=0 || s==0))
+        ? INTERFACE_DOWN LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    // Cases where we get the vertical interfaces from write_horizontal_slices
+    <- (side==0 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
+        ? INTERFACE_DOWN_HRZ write_horizontal_slices(x, (y+subgrid_number_y-1)%subgrid_number_y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- (side==1 && (((s+1)*overlap_y-1)%overlap_x==0 && s!=0))
+        ? INTERFACE_UP_HRZ write_horizontal_slices(x, y, (((s+1)*overlap_y)-1)/overlap_x-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    // <- (side==0) ? INTERFACE_UP LBM_STEP(x, y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    // <- (side==1) ? INTERFACE_DOWN LBM_STEP(x, (y+1)%subgrid_number_y, (s+1)*overlap_y-1) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    <- NULL [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"] // To make sure we never arrive here
+
+    // In all cases, we send to LBM_STEP
+    -> (side==0) ? INTERFACE_DOWN LBM_STEP(x, y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+    -> (side==1) ? INTERFACE_UP LBM_STEP(x, (y+subgrid_number_y-1)%subgrid_number_y, (s+1)*overlap_y) [type="VERTICAL_SLICE" type_remote="VERTICAL_SLICE"]
+
+BODY [type=CUDA]
+    fprintf(stderr, "[Process %d] kernel vertical_interface CPU (%d %d %d %d)\n",
+                rank, x, y, side, s);
+    // if(x==0/* && y==1*/)
+    // {
+    //     PRECISION *vertical_interface = VERTICAL_INTERFACE;
+
+    //     int i = 1*gridParameters.subgridTrueSize[0];
+    //     int first = 40 + gridParameters.overlapSize[0];
+
+    //     printf("kernel vertical_interface CPU (%d %d %d %d) [%d-%d] = %f %f %f %f %f\n",
+    //         x, y, side, s, first, first+4,
+    //         vertical_interface[i+first], vertical_interface[i+first+1], vertical_interface[i+first+2], vertical_interface[i+first+3], vertical_interface[i+first+4]);
+    //     // for(int r=0;r<60;r+=5)
+    //     // {
+    //     //     printf("kernel vertical_interface CPU (%d %d %d %d) [%d-%d] = %f %f %f %f %f\n",
+    //     //         x, y, side, s, r, r+4, vertical_interface[i+r], vertical_interface[i+r+1], vertical_interface[i+r+2], vertical_interface[i+r+3], vertical_interface[i+r+4]);
+    //     // }
+    // }
+END
+
+horizontal_interface(x, y, side, s)
+
+x = 0 .. subgrid_number_x-1
+y = 0 .. subgrid_number_y-1
+side = 0 .. 1
+s = 0 .. (number_of_steps-overlap_x-1)/overlap_x
+
+: descGridD(x, y, 0)
+
+RW HORIZONTAL_INTERFACE
+    <- (side==0) ? INTERFACE_RIGHT_HRZ_RD read_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    <- (side==1) ? INTERFACE_LEFT_HRZ_RD read_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==0) ? INTERFACE_LEFT_HRZ_WRT write_horizontal_slices(x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+    -> (side==1) ? INTERFACE_RIGHT_HRZ_WRT write_horizontal_slices((x+subgrid_number_x-1)%subgrid_number_x, y, s) [type="HORIZONTAL_SLICE" type_remote="HORIZONTAL_SLICE"]
+
+BODY [type=CUDA]
+    fprintf(stderr, "[Process %d] kernel horizontal_interface CPU (%d %d %d %d)\n",
+               rank, x, y, side, s);
+END
+
+save_file_reduce(subgrid_x, subgrid_y, d, s)
+
+subgrid_x = 0 .. subgrid_number_x-1
+subgrid_y = 0 .. subgrid_number_y-1
+d = 0 .. directions_number-1
+s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved steps (morally: ceil(number_of_steps/save_interval))
+
+: descGridD(subgrid_x, subgrid_y, d)
+
+RW SUBGRID_SAVE_REDUCE
+    <- (s==0)
+        ? SUBGRID_D FillGrid(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- ((s*save_interval-1)%overlap_x==overlap_x-1 && s!=(number_of_steps+save_interval-1)/save_interval && d==0) // If the step had a horizontal exchange:
+        ? SUBGRID_HORIZONTAL_WRITE_0 write_horizontal_slices(subgrid_x, subgrid_y, (s*save_interval-1)/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- ((s*save_interval-1)%overlap_x==overlap_x-1 && s!=(number_of_steps+save_interval-1)/save_interval && d==1) // If the step had a horizontal exchange:
+        ? SUBGRID_HORIZONTAL_WRITE_1 write_horizontal_slices(subgrid_x, subgrid_y, (s*save_interval-1)/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- ((s*save_interval-1)%overlap_x==overlap_x-1 && s!=(number_of_steps+save_interval-1)/save_interval && d==2) // If the step had a horizontal exchange:
+        ? SUBGRID_HORIZONTAL_WRITE_2 write_horizontal_slices(subgrid_x, subgrid_y, (s*save_interval-1)/overlap_x) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==(number_of_steps+save_interval-1)/save_interval && d==0)
+        ? SUBGRID_TO_0 LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==(number_of_steps+save_interval-1)/save_interval && d==1)
+        ? SUBGRID_TO_1 LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (s==(number_of_steps+save_interval-1)/save_interval && d==2)
+        ? SUBGRID_TO_2 LBM_STEP(subgrid_x, subgrid_y, number_of_steps-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (d==0)
+        ? SUBGRID_TO_0 LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <- (d==1)
+        ? SUBGRID_TO_1 LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    <-
+        SUBGRID_TO_2 LBM_STEP(subgrid_x, subgrid_y, (s)*save_interval-1) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s*save_interval < number_of_steps && d==0)
+        ? SUBGRID_FROM_0 LBM_STEP(subgrid_x, subgrid_y, s*save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s*save_interval < number_of_steps && d==1)
+        ? SUBGRID_FROM_1 LBM_STEP(subgrid_x, subgrid_y, s*save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    -> (s*save_interval < number_of_steps && d==2)
+        ? SUBGRID_FROM_2 LBM_STEP(subgrid_x, subgrid_y, s*save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+        //: SUBGRID_D_OUT WriteBack(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+    // ->
+    //     descGridD(subgrid_x, subgrid_y, d)
+
+RW SUBGRID_SAVE_REDUCED
+    <- (subgrid_x==0 && subgrid_y==0 && d!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, d-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <- (subgrid_x==0 && subgrid_y!=0 && d!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <- (subgrid_x==0 && subgrid_y!=0 && d==0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_y-1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <- (subgrid_x!=0)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x-1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    <-  (subgrid_x==0 && subgrid_y==0 && d==0) ? // Without the condition: crashes (why?)
+        NEW [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d == directions_number-1)
+        ? SUBGRID_TO_SAVE save_file(s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y != subgrid_number_y-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, subgrid_y+1, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    -> (subgrid_x == subgrid_number_x-1 && subgrid_y == subgrid_number_y-1 && d != directions_number-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(0, 0, d+1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+    -> (subgrid_x != subgrid_number_x-1)
+        ? SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_x+1, subgrid_y, d, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+
+BODY [type=CUDA]
+    PRECISION *subgrid_reduced = SUBGRID_SAVE_REDUCED;
+    PRECISION *subgrid_to_reduce = SUBGRID_SAVE_REDUCE;
+
+    fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d)\n",
+               rank, subgrid_x, subgrid_y, d, s);
+
+    fprintf(stderr, "[Process %d] kernel save_file_reduce GPU (%d %d %d %d) (subgrid_to_reduce=%p, subgrid_reduced=%p)\n",
+               rank, subgrid_x, subgrid_y, d, s, subgrid_to_reduce, subgrid_reduced);
+
+    if(subgrid_x==0 && subgrid_y==0 && d==0)
+    {
+        // Set the initial values to zero
+        gpuErrchk(cudaMemset(subgrid_reduced, 0, gridParameters.sizeOfSavedData[0]*gridParameters.sizeOfSavedData[1]*gridParameters.conservativesNumber*sizeof(PRECISION)));
+    }
+
+    int subgrid_y_corrected = subgrid_y;
+    if(subgrid_number_y%2==1)
+    {
+        // This tinkering works perfectly but is completely illogical
+        // It suggests that some part of the code does not work as intended
+        subgrid_y_corrected = subgrid_number_y-1-subgrid_y;
+    }
+    d2q9_save_reduce_caller(gridParameters, subgrid_to_reduce, subgrid_reduced, subgrid_x, subgrid_y_corrected, d);
+END
+
+save_file(s)
+
+s = 0 .. (number_of_steps+save_interval-1)/save_interval // Number of saved steps
+
+: descGridD((s*13)%subgrid_number_x, (s*17)%subgrid_number_y, 0)
+
+READ SUBGRID_TO_SAVE
+    <- SUBGRID_SAVE_REDUCED save_file_reduce(subgrid_number_x-1, subgrid_number_y-1, directions_number-1, s) [type="SAVE_GRID" type_remote="SAVE_GRID"]
+
+
+BODY
+    PRECISION *mat = (PRECISION*)(SUBGRID_TO_SAVE);
+    char current_filename[256];
+    PRECISION dt = get_dt(gridParameters);
+    PRECISION t = (s*save_interval)*dt;
+
+    // fprintf(stderr, "[Process %d] kernel save_file CPU (%d) (first value = %f)\n",
+    //            rank, s, mat[0]);
+    fprintf(stderr, "[Process %d] kernel save_file CPU (%d)\n",
+                rank, s);
+
+    sprintf(current_filename, "data_t=%.4f.dat", t);
+    // d2q9_view_python(current_filename, gridParameters, mat); // Dont save for the benchmark
+END
+
+// writeBack(subgrid_x, subgrid_y, d)
+
+// subgrid_x = 0 .. subgrid_number_x-1
+// subgrid_y = 0 .. subgrid_number_y-1
+// d = 0 .. gridParameters.directionsNumber-1
+
+// : descGridD(subgrid_x, subgrid_y, d)
+
+// WRITE SUBGRID_D_OUT
+//     //<- SUBGRID_SAVE_REDUCE save_file_reduce(subgrid_x, subgrid_y, d, (number_of_steps+save_interval-1)/save_interval) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+//     //<- NEW [type="SUBGRID_D" type_remote="SUBGRID_D"]
+//     -> descGridD(subgrid_x, subgrid_y, d) [type="SUBGRID_D" type_remote="SUBGRID_D"]
+
+// BODY
+//     PRECISION *mat = (PRECISION*)(SUBGRID_D_OUT);
+
+//     //fprintf(stderr, "[Process %d] kernel writeBack (%d %d %d) (first value = %f)\n", rank, subgrid_x, subgrid_y, d, mat[0]);
+// END
+
+extern "C" %{
+
+int main(int argc, char *argv[])
+{
+    parsec_context_t* parsec;
+    int rc;
+    int rank, world;
+    parsec_LBM_non_parametrized_taskpool_t *tp;
+    //int mycounter;
+
+    struct timeval begin_initialization, end_initialization, end_execution;
+
+    parsec_arena_datatype_t subgrid_d_arena_datatype;
+    parsec_datatype_t subgrid_d_datatype;
+
+    parsec_arena_datatype_t vertical_slice_arena_datatype;
+    parsec_datatype_t vertical_slice_datatype;
+
+    parsec_arena_datatype_t horizontal_slice_arena_datatype;
+    parsec_datatype_t horizontal_slice_datatype;
+
+    parsec_arena_datatype_t save_grid_arena_datatype;
+    parsec_datatype_t save_grid_datatype;
+
+#if defined(PARSEC_HAVE_MPI)
+    {
+        int provided;
+        MPI_Init_thread(&argc, &argv, MPI_THREAD_SERIALIZED, &provided);
+    }
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+#else
+    world = 1;
+    rank = 0;
+#endif
+
+    // Parameters:
+    int overlap_x;
+    int step_kernel_version;
+
+    // If no mpi, read the parameters from the parameters, else, default values
+    if(world == 1)
+    {
+        if(argc != 3)
+        {
+            fprintf(stderr, "Usage: %s <overlap_x> <step_kernel_version>\n", argv[0]);
+            exit(1);
+        }
+        overlap_x = atoi(argv[1]);
+        step_kernel_version = atoi(argv[2]);
+    }
+    else
+    {
+        overlap_x = 1;
+        step_kernel_version = 0;
+    }
+
+    // LBM parameters
+    Grid grid = newGrid(rank, world, overlap_x);
+
+    PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
+    PRECISION dt = get_dt(grid);
+
+    PRECISION tmax = 1;
+    int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
+    number_of_steps = 500;
+    int save_interval = 500;
+
+
+    // Ensure that the configuration is valid
+    assert(grid.overlapSize[1] == 1);
+
+
+    parsec = parsec_init(-1, &argc, &argv);
+
+    int nodes = world;
+
+#if defined(PARSEC_HAVE_CUDA)
+    parsec_info_id_t CuHI = parsec_info_register(&parsec_per_stream_infos, "CUBLAS::HANDLE",
+                                                 destroy_cublas_handle, NULL,
+                                                 create_cublas_handle, NULL,
+                                                 NULL);
+    assert(CuHI != -1);
+#else
+    int CuHI = -1;
+#endif
+
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &subgrid_d_datatype);
+    parsec_add2arena_rect(&subgrid_d_arena_datatype, subgrid_d_datatype,
+                                 grid.subgridTrueSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
+
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &vertical_slice_datatype);
+    parsec_add2arena_rect(&vertical_slice_arena_datatype, vertical_slice_datatype,
+                                 grid.subgridTrueSize[0], grid.overlapSize[1]*grid.conservativesNumber, grid.subgridTrueSize[0]);
+
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+        &horizontal_slice_datatype);
+    parsec_add2arena_rect(&horizontal_slice_arena_datatype, horizontal_slice_datatype,
+                                 grid.overlapSize[0], grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber, grid.overlapSize[0]);
+    
+    parsec_translate_matrix_type(
+#if defined(PRECISION_DOUBLE)
+        PARSEC_MATRIX_DOUBLE,
+#else
+        PARSEC_MATRIX_FLOAT,
+#endif
+    &save_grid_datatype);
+    parsec_add2arena_rect(&save_grid_arena_datatype, save_grid_datatype,
+                                 grid.sizeOfSavedData[0], grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber, grid.sizeOfSavedData[0]);
+
+/*
+    printf("sizes:\n");
+    printf("subgrid_d_arena_datatype = %d\n", grid.subgridTrueSize[0] * grid.subgridTrueSize[1]*grid.conservativesNumber);
+    printf("vertical_slice_arena_datatype = %d\n", grid.subgridTrueSize[0] * grid.overlapSize[1]*grid.conservativesNumber);
+    printf("horizontal_slice_arena_datatype = %d\n", grid.overlapSize[0] * grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber);
+    printf("save_grid_arena_datatype = %d\n", grid.sizeOfSavedData[0] * grid.sizeOfSavedData[1]*grid.conservativesNumber*grid.directionsNumber);
+exit(1);
+*/
+
+    gettimeofday(&begin_initialization, 0);
+
+    tp = (parsec_LBM_non_parametrized_taskpool_t*)parsec_LBM_non_parametrized_new(
+                                grid.desc, grid,
+                                rank, world,
+                                grid.subgridNumber[0], grid.subgridNumber[1],
+                                grid.subgridTrueSize[0], grid.subgridTrueSize[1], grid.conservativesNumber, grid.directionsNumber,
+                                grid.overlapSize[0], grid.overlapSize[1],
+                                number_of_steps,
+                                save_interval,
+                                step_kernel_version,
+                                CuHI);
+
+    assert( NULL != tp );
+    tp->arenas_datatypes[PARSEC_LBM_non_parametrized_SUBGRID_D_ADT_IDX] = subgrid_d_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_non_parametrized_VERTICAL_SLICE_ADT_IDX] = vertical_slice_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_non_parametrized_HORIZONTAL_SLICE_ADT_IDX] = horizontal_slice_arena_datatype;
+    tp->arenas_datatypes[PARSEC_LBM_non_parametrized_SAVE_GRID_ADT_IDX] = save_grid_arena_datatype;
+    PARSEC_OBJ_RETAIN(subgrid_d_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(vertical_slice_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(horizontal_slice_arena_datatype.arena);
+    PARSEC_OBJ_RETAIN(save_grid_arena_datatype.arena);
+
+    rc = parsec_context_add_taskpool( parsec, (parsec_taskpool_t*)tp );
+    PARSEC_CHECK_ERROR(rc, "parsec_context_add_taskpool");
+    rc = parsec_context_start(parsec);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_start");
+    gettimeofday(&end_initialization, 0);
+    rc = parsec_context_wait(parsec);
+    gettimeofday(&end_execution, 0);
+    PARSEC_CHECK_ERROR(rc, "parsec_context_wait");
+
+    if( rank == 0 ) {
+        for(int tile_x=0; tile_x<grid.subgridNumber[0]; tile_x++) {
+            for(int tile_y=0; tile_y<grid.subgridNumber[1]; tile_y++) {
+                for(int d=0; d<grid.directionsNumber; d++) {
+                    const int size_of_one_tile = grid.subgridTrueSize[0] * grid.subgridTrueSize[1] * grid.conservativesNumber;
+                    PRECISION *mat = &(((PRECISION*)((parsec_multidimensional_grid_t*)grid.desc)->grid)[size_of_one_tile * (tile_x + tile_y * grid.subgridNumber[0])]);
+                    //printf("for tile (%d,%d) and d=%d, first value at the end : %f\n", tile_x, tile_y, d, mat[0]);
+                }
+            }
+        }
+    }
+
+
+    parsec_taskpool_free(&tp->super);
+
+    //for(int i=0;i<grid.conservativesNumber*grid.directionsNumber;++i)
+    int i=0;
+    {
+        parsec_data_free(((parsec_multidimensional_grid_t*)grid.desc)->grid);
+        parsec_grid_destroy(grid.desc);
+    }
+
+    // Recall the relevant parameters:
+
+    printf("LBM parameters:\n");
+    printf("  delta_x = %f\n", delta_x);
+    printf("  dt = %f\n", dt);
+    printf("  tmax = %f\n", tmax);
+    printf("  number_of_steps = %d\n", number_of_steps);
+    printf("  save_interval = %d\n", save_interval);
+    printf("  overlap_x = %d\n", overlap_x);
+
+    printf("Block sizes:\n");
+    printf("  READ_VERTICAL_SLICES_BLOCK_NUM = %d\n", READ_VERTICAL_SLICES_BLOCK_NUM);
+    printf("  READ_VERTICAL_SLICES_THREAD_NUM = %d\n", READ_VERTICAL_SLICES_THREAD_NUM);
+    // printf("  LBM_STEP_BLOCK_NUM = %d\n", LBM_STEP_BLOCK_NUM);
+    // printf("  LBM_STEP_THREAD_NUM = %d\n", LBM_STEP_THREAD_NUM);
+
+    printf("############################################\n");
+    printf("################# Grid sizes ###############\n");
+    printf("############################################\n");
+    printf("Global grid size (theoretical): %d x %d\n", grid.size[0], grid.size[1]);
+    printf("Global grid size in memory (theoretical): %f MB\n",
+        (double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024);
+    double subgridSize = (double)grid.subgridTrueSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024;
+    printf("Subgrid size: %f MB\n",
+        subgridSize);
+    double horizontalInterfaceSize = (double)grid.overlapSize[0]*(double)grid.subgridTrueSize[1]*grid.conservativesNumber*grid.directionsNumber*sizeof(PRECISION)/(double)1024/(double)1024;
+        printf("Horizontal interface size: %f MB\n",
+        horizontalInterfaceSize);
+    double verticalInterfaceSize = (double)grid.subgridTrueSize[0]*(double)grid.overlapSize[1]*grid.conservativesNumber*sizeof(PRECISION)/(double)1024/(double)1024;
+    printf("Vertical interface size: %f MB\n",
+        verticalInterfaceSize);
+    printf("Size of all the subgrids: %f MB\n",
+        subgridSize*grid.subgridNumber[0]*grid.subgridNumber[1]);
+    printf("Size of all the horizontal interfaces: %f MB\n",
+        horizontalInterfaceSize*2*grid.subgridNumber[0]*grid.subgridNumber[1]);
+    printf("Size of all the vertical interfaces: %f MB\n",
+        verticalInterfaceSize*2*grid.subgridNumber[0]*grid.subgridNumber[1]);
+
+    float stepTime=getTotalTime("LBM_step");
+    printf("Processed data per second: %f GB/s (%fGB/%fs)\n",
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(PRECISION)/(double)1024/(double)1024/(double)1024/(stepTime/1000),
+        2*(double)grid.size[0]*(double)grid.size[1]*grid.conservativesNumber*grid.directionsNumber*(double)number_of_steps*sizeof(PRECISION)/(double)1024/(double)1024/(double)1024,
+        stepTime/1000);
+
+    // Print the per-kernel summary
+    printSummary();
+
+    long seconds;
+    long microseconds;
+    double elapsed;
+
+    seconds = end_execution.tv_sec - end_initialization.tv_sec;
+    microseconds = end_execution.tv_usec - end_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("execution_time: %f s\n", elapsed);
+    seconds = end_initialization.tv_sec - begin_initialization.tv_sec;
+    microseconds = end_initialization.tv_usec - begin_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("initialization_time: %f s\n", elapsed);
+    seconds = end_execution.tv_sec - begin_initialization.tv_sec;
+    microseconds = end_execution.tv_usec - begin_initialization.tv_usec;
+    elapsed = seconds + microseconds*1e-6;
+    printf("total_time: %f s\n", elapsed);
+
+    // Compute the average first_task_time and last_task_time time
+    double average_first_task = 0;
+    double average_last_task = 0;
+    for(int subgrid_x=0;subgrid_x<grid.subgridNumber[0];++subgrid_x)
+    {
+        for(int subgrid_y=0;subgrid_y<grid.subgridNumber[1];++subgrid_y)
+        {
+            long seconds_first = first_task_time[subgrid_x][subgrid_y].tv_sec - begin_initialization.tv_sec;
+            long microseconds_first = first_task_time[subgrid_x][subgrid_y].tv_usec - begin_initialization.tv_usec;
+            long seconds_last = last_task_time[subgrid_x][subgrid_y].tv_sec - begin_initialization.tv_sec;
+            long microseconds_last = last_task_time[subgrid_x][subgrid_y].tv_usec - begin_initialization.tv_usec;
+            average_first_task += seconds_first + microseconds_first*1e-6;
+            average_last_task += seconds_last + microseconds_last*1e-6;
+        }
+    }
+    average_first_task /= grid.subgridNumber[0]*grid.subgridNumber[1];
+    average_last_task /= grid.subgridNumber[0]*grid.subgridNumber[1];
+
+    printf("LBM execution time (including PaRSEC overhead): %f s\n", average_last_task-average_first_task);
+
+
+    parsec_fini(&parsec);
+#if defined(PARSEC_HAVE_MPI)
+    MPI_Finalize();
+#endif
+
+    free(grid.desc);
+
+    return 0;
+}
+
+%}
