@@ -163,8 +163,8 @@ do
     echo "Running the application" >> $job_log_file
     
 	# Comment one or the other depending on what you want to test
-    $test_app_source_directory/LBM_non_parametrized $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
-    # $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+    # $test_app_source_directory/LBM_non_parametrized $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+    $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
 done
 
 
