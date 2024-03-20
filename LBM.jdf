@@ -159,6 +159,9 @@ static void destroy_cublas_handle(void *_h, void *_n)
     (void)_h;
 }
 
+#define MAX_SUBGRIDS_X 10
+#define MAX_SUBGRIDS_Y 10
+struct timeval first_task_time[MAX_SUBGRIDS_X][MAX_SUBGRIDS_Y], last_task_time[MAX_SUBGRIDS_X][MAX_SUBGRIDS_Y];
 
 //////////////////////////////////////////////////
 ///////////////  View functions  /////////////////
@@ -301,6 +304,8 @@ BODY [type=CUDA]
 
     fprintf(stderr, "[Process %d] FillGrid GPU: %d %d %d (subgrid=%p)\n", rank, subgrid_x, subgrid_y, d, subgrid);
 
+    gettimeofday(&first_task_time[subgrid_x][subgrid_y], NULL);
+
     d2q9_initial_value_d_caller(gridParameters, subgrid, subgrid_x, subgrid_y, d);
 END
 
@@ -377,6 +382,11 @@ BODY [type=CUDA]
                 subgrid_x, subgrid_y,
                 step_kernel_version
                 );
+    
+    if(s == number_of_steps-1)
+    {
+        gettimeofday(&last_task_time[subgrid_x][subgrid_y], NULL);
+    }
 END
 
 read_horizontal_slices(subgrid_x, subgrid_y, s)
@@ -889,15 +899,36 @@ exit(1);
     seconds = end_execution.tv_sec - end_initialization.tv_sec;
     microseconds = end_execution.tv_usec - end_initialization.tv_usec;
     elapsed = seconds + microseconds*1e-6;
-    printf("execution_time: %f\n", elapsed);
+    printf("execution_time: %f s\n", elapsed);
     seconds = end_initialization.tv_sec - begin_initialization.tv_sec;
     microseconds = end_initialization.tv_usec - begin_initialization.tv_usec;
     elapsed = seconds + microseconds*1e-6;
-    printf("initialization_time: %f\n", elapsed);
+    printf("initialization_time: %f s\n", elapsed);
     seconds = end_execution.tv_sec - begin_initialization.tv_sec;
     microseconds = end_execution.tv_usec - begin_initialization.tv_usec;
     elapsed = seconds + microseconds*1e-6;
-    printf("total_time: %f\n", elapsed);
+    printf("total_time: %f s\n", elapsed);
+
+    // Compute the average first_task_time and last_task_time time
+    double average_first_task = 0;
+    double average_last_task = 0;
+    for(int subgrid_x=0;subgrid_x<grid.subgridNumber[0];++subgrid_x)
+    {
+        for(int subgrid_y=0;subgrid_y<grid.subgridNumber[1];++subgrid_y)
+        {
+            long seconds_first = first_task_time[subgrid_x][subgrid_y].tv_sec - begin_initialization.tv_sec;
+            long microseconds_first = first_task_time[subgrid_x][subgrid_y].tv_usec - begin_initialization.tv_usec;
+            long seconds_last = last_task_time[subgrid_x][subgrid_y].tv_sec - begin_initialization.tv_sec;
+            long microseconds_last = last_task_time[subgrid_x][subgrid_y].tv_usec - begin_initialization.tv_usec;
+            average_first_task += seconds_first + microseconds_first*1e-6;
+            average_last_task += seconds_last + microseconds_last*1e-6;
+        }
+    }
+    average_first_task /= grid.subgridNumber[0]*grid.subgridNumber[1];
+    average_last_task /= grid.subgridNumber[0]*grid.subgridNumber[1];
+
+    printf("LBM execution time (including PaRSEC overhead): %f s\n", average_last_task-average_first_task);
+
 
     parsec_fini(&parsec);
 #if defined(PARSEC_HAVE_MPI)

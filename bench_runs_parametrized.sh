@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# Same as bench_runs.sh, but tests with or without parametrized flows
 
 is_on_cluster=0
 
@@ -16,7 +17,7 @@ root_directory=`pwd`
 runs_directory="$root_directory/jobs/runs"
 job_output_directory="$runs_directory/$job_id"
 test_app_source_directory="$root_directory/playground_parsec"
-running_script_path="$test_app_source_directory/bench_runs.sh"
+running_script_path="$test_app_source_directory/bench_runs_parametrized.sh"
 
 # Load modules (only if on a cluster)
 if [ "$is_on_cluster" -eq 1 ] ; then

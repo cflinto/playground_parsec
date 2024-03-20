@@ -47,7 +47,7 @@
 #define PROBLEM_SIZE_Y (20736/2)
 // #define PROBLEM_SIZE_X (384)
 // #define PROBLEM_SIZE_Y (384/2)
-#define PROBLEM_SIZE_Z (8)
+#define PROBLEM_SIZE_Z (1)
 
 #define SAVED_DATA_SIZE_X (576*2)
 #define SAVED_DATA_SIZE_Y (576)
