@@ -126,7 +126,7 @@ LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/cflint/parsec_project/parsec/build/parsec
 export PKG_CONFIG_PATH
 export LD_LIBRARY_PATH
 
-for experiment_configuration in `seq 1 32` ;
+for experiment_configuration in `seq 1 256` ;
 do
 	experiment_directory="$job_output_directory/experiment_$experiment_configuration"
 	experiment_log_file="$experiment_directory/log"
@@ -163,8 +163,8 @@ do
     echo "Running the application" >> $job_log_file
     
 	# Comment one or the other depending on what you want to test
-    # $test_app_source_directory/LBM_non_parametrized $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
-    $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+    $test_app_source_directory/LBM_non_parametrized $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
+    # $test_app_source_directory/LBM $overlap_x $step_kernel_version > "$execution_output_file" 2>&1
 done
 
 
