@@ -35,8 +35,8 @@ Grid newGrid(int rank, int nodes, int overlap_x)
     grid.conservativesNumber = 3;
     grid.directionsNumber = 3;
 
-	grid.subgridNumber[0] = 3;
-	grid.subgridNumber[1] = 3;
+	grid.subgridNumber[0] = 2;
+	grid.subgridNumber[1] = 2;
 	grid.subgridOwnedSize[0] = grid.size[0] / grid.subgridNumber[0];
 	grid.subgridOwnedSize[1] = grid.size[1] / grid.subgridNumber[1];
 
@@ -633,7 +633,7 @@ BODY
                 rank, s);
 
     sprintf(current_filename, "data_t=%.4f.dat", t);
-    // d2q9_view_python(current_filename, gridParameters, mat); // Dont save for the benchmark
+    d2q9_view_python(current_filename, gridParameters, mat); // Dont save for the benchmark
 END
 
 // writeBack(subgrid_x, subgrid_y, d)
@@ -718,10 +718,10 @@ int main(int argc, char *argv[])
     PRECISION delta_x = grid.physicalSize[0] / (PRECISION)grid.size[0];
     PRECISION dt = get_dt(grid);
 
-    PRECISION tmax = 1;
+    PRECISION tmax = 2000;
     int number_of_steps = (int)((tmax-EPSILON) / dt) + 1;
-    number_of_steps = 500;
-    int save_interval = 500;
+    // number_of_steps = 500;
+    int save_interval = 2844;
 
 
     // Ensure that the configuration is valid
